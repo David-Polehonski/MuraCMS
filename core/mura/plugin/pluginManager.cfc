@@ -348,20 +348,11 @@ select * from tplugins order by #arguments.orderby#
 		</cfif>
 
 		<cfif len(serverFile)>
-			<cfset zipTrim=getZipTrim(serverFile)>
-
-			<cfif len(zipTrim)>
-				<cfset variables.zipTool.extract(zipFilePath=serverfile,extractPath=location, overwriteFiles=true, extractDirs=zipTrim, extractDirsToTop=true)>
-			<cfelse>
-				<cfset variables.zipTool.extract(zipFilePath=serverfile,extractPath=location, overwriteFiles=true)>
-			</cfif>
-
+			<cfset variables.zipTool.extract(zipFilePath=serverfile,extractPath=location, overwriteFiles=true)>
+			
 			<cfif not structIsEmpty(cffileData)>
 				<cffile action="delete" file="#serverfile#">
 			</cfif>
-		<!---<cfelseif getLocation(arguments.pluginDir) neq location>
-			<cfset variables.fileWriter.copyDir(baseDir=getLocation(arguments.pluginDir),destDir=location,excludeHiddenFiles=false)>
-		--->
 		</cfif>
 
 		<cfset savePluginXML(modID=modID) />
@@ -764,12 +755,12 @@ select * from tplugins order by #arguments.orderby#
 				<cfelse>
 					<cfset item="#baseDir#/#rsRequirements.name#">
 					<cfset rsCheckDiscoveredPlugin=createObject("component","mura.Zip").list(item)>
-
 					<cfquery name="rsCheckDiscoveredPlugin" dbtype="query">
 						select * from rsCheckDiscoveredPlugin
-						where entry like '%plugin#variables.configBean.getFileDelim()#config.xml'
-						or entry like '%plugin#variables.configBean.getFileDelim()#config.xml.cfm'
+						where name like '%plugin/config.xml'
+						or name like '%plugin/config.xml.cfm'
 					</cfquery>
+					
 					<cfif rsCheckDiscoveredPlugin.recordcount>
 						<cfset deployPlugin(siteID="",pluginFile=item,useDefaultSettings=true,autoDeploy=false)>
 						<cfset fileDelete(item)>
@@ -3311,12 +3302,12 @@ select * from rs order by name
 	<cfset var rsZipFiles=variables.zipTool.list(zipFilePath=arguments.pluginFile)>
 
 	<cfquery name="rsZipFiles" dbtype="query">
-		select * from rsZipFiles
-		where entry like '%#delim#plugin#delim#%'
-		or entry like 'plugin#delim#%'
+		select name from rsZipFiles
+		where name like '%#delim#plugin#delim#%'
+		or name like 'plugin#delim#%'
 	</cfquery>
 
-	<cfloop list="#rsZipFiles.entry#" delimiters="#delim#" index="i">
+	<cfloop list="#rsZipFiles.name#" delimiters="#delim#" index="i">
 		<cfif i eq "plugin">
 			<cfbreak>
 		<cfelse>

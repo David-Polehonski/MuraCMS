@@ -746,7 +746,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 	<cfset var rs=createObject("component","mura.Zip").List(zipFilePath="#arguments.BundleFile#")>
 
 	<cfquery name="rs" dbType="query">
-		select entry from rs where entry in ('sitefiles.zip','pluginfiles.zip','filefiles.zip','pluginfiles.zip')
+		select name from rs where name in ('sitefiles.zip','pluginfiles.zip','filefiles.zip','pluginfiles.zip')
 	</cfquery>
 	<cfreturn rs.recordcount>
 </cffunction>
@@ -756,7 +756,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 	<cfset var rs=createObject("component","mura.Zip").List(zipFilePath="#arguments.BundleFile#")>
 
 	<cfquery name="rs" dbType="query">
-		select entry from rs where entry in ('assetfiles.zip')
+		select name from rs where name in ('assetfiles.zip')
 	</cfquery>
 	<cfreturn rs.recordcount>
 </cffunction>
