@@ -375,8 +375,6 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 			param name="request.muraAPIRequestMode" default="json";
 			param name="request.muraSessionManagement" default=true;
 
-			getBean('utility').suppressDebugging();
-
 			var headers = getHttpRequestData().headers;
 
 			if( structKeyExists( headers, 'Origin' )){
@@ -973,7 +971,7 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 
 					if( getServiceFactory().containsBean(entitycheck)){
 						params.entityName=entitycheck;
-					} else { 
+					} else {
 						doubleCheckEntityName(params.entityName);
 					}
 				} else {
@@ -1234,10 +1232,10 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 			}
 
 			structAppend(form,params);
-		
+
 			switch(method){
 				case "GET":
-				
+
 					if((isDefined('params.id') || (params.entityName=='content') && isDefined('params.contenthistid'))){
 						if(!isDefined('params.id') && (params.entityName=='content' && isDefined('params.contenthistid'))){
 							params.id=params.contenthistid;
@@ -1252,7 +1250,7 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 								params.method='findPermissions';
 								result=findPermissions(argumentCollection=params);
 						} else if(listLen(params.id) > 1){
-						
+
 							params.ids=params.id;
 							params.method='findMany';
 							result=findMany(argumentCollection=params);
@@ -1263,13 +1261,13 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 							} else {
 								result=doubleCheckEntityMethod(params.entityname,params.id,params,false);
 							}
-							
+
 						}
-						
+
 					} else {
-						if(arrayLen(pathInfo) == 3 
+						if(arrayLen(pathInfo) == 3
 							&& !(
-								isValid('uuid',pathInfo[3]) 
+								isValid('uuid',pathInfo[3])
 								|| pathInfo[3]=='00000000000000000000000000000000001'
 								)
 						){
@@ -1403,17 +1401,17 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 	function doubleCheckEntityName(entityName){
 		arguments.entityName=REReplace(arguments.entityName,"[^0-9A-Za-z_]\*","","all");
 		var found=false;
-		
+
 		if(!structKeyExists(variables.entityChecks,'#arguments.entityname#')
 			|| DateDiff('n', variables.entityChecks['#arguments.entityname#'], now())
 		){
 			var lookupdata=getBean('settingsManager').getDeferredModuleAssets();
-			
+
 			variables.entityChecks['#arguments.entityname#']=now();
 
 			for(var asset in lookupdata.assets){
 				if(structKeyExists(asset,'modelDir') and len(asset.modelDir)){
-					if(fileExists(asset.modelDir & "/" & arguments.entityName & ".cfc") 
+					if(fileExists(asset.modelDir & "/" & arguments.entityName & ".cfc")
 					|| fileExists(asset.modelDir & "/beans/" & arguments.entityName & ".cfc")
 						|| fileExists(asset.modelDir & "/entities/" & arguments.entityName & ".cfc")
 						|| fileExists(asset.modelDir & "/services/" & arguments.entityName & ".cfc")
@@ -1443,7 +1441,7 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 
 				structDelete(params,'id');
 
-				return evaluate('entity.#arguments.method#(argumentCollection=params)');	
+				return evaluate('entity.#arguments.method#(argumentCollection=params)');
 			} else if (arguments.throwError){
 				throw(type="invalidMethodCall");
 			} else {
@@ -2708,7 +2706,7 @@ component extends="mura.cfobject" hint="This provides JSON/REST API functionalit
 		if(!allowAccess(arguments.entityName,$)){
 			throw(type="authorization");
 		}
-		
+
 		checkForChangesetRequest(arguments.entityName,arguments.siteid);
 
 		var propName='';

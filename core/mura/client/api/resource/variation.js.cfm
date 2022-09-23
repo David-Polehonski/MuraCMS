@@ -6,7 +6,7 @@
 <cfcontent reset="yes" type="application/javascript">
 <cfset isIeSix=FindNoCase('MSIE 6','#CGI.HTTP_USER_AGENT#') GREATER THAN 0>
 <cfset $=application.serviceFactory.getBean("MuraScope").init(url.siteID)>
-<cfset $.getBean('utility').suppressDebugging()>
+
 <cfparam name="session.siteid" default="#url.siteid#">
 <cfparam name="url.contenttype" default="">
 <cfif not structKeyExists(session,"rb")>
