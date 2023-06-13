@@ -930,10 +930,6 @@ Blog: www.codfusion.com--->
 		<CFRETURN sOutText>
 	</cffunction>
 
-	<cffunction name="suppressDebugging" output="false">
-		<cfsetting showdebugoutput="no">
-	</cffunction>
-
 	<cffunction name="queryAppend" output="false"
 		hint="This takes two queries and appends the second one to the first one. This actually updates the first query and does not return anything.">
 		<cfargument name="QueryOne" type="query" required="true" />

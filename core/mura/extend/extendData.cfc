@@ -353,24 +353,6 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 	<cfreturn extData/>
 </cffunction>
 
-<!---
-<cffunction name="getExtendSetDataByAttributeName" returntype="struct" output="false">
-	<cfargument name="key">
-	<cfset var rsExtendSetDataByAttributeName="" />
-
-	<cfquery name="rsExtendSetDataByAttributeName" dbType="query">
-		 select baseID, extendSetID, name, defaultValue, attributeValue, validation from variables.instance.data
-		 where lower(name)=<cfqueryparam cfsqltype="cf_sql_varchar"  value="#lcase(key)#">
-		 <cfif isNumeric(arguments.key)>
-			 or attributeID=<cfqueryparam cfsqltype="cf_sql_numeric"  value="#key#">
-		 </cfif>
-	</cfquery>
-
-	<cfreturn convertDataToStruct(rsExtendSetDataByAttributeName)/>
-
-</cffunction>
---->
-
 <cffunction name="convertDataToStruct" output="false">
 	<cfargument name="rs">
 	<cfset var extData=structNew() />

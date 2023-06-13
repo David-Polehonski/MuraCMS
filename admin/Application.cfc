@@ -329,8 +329,6 @@ component extends="framework" output="false" {
 			param name="cookie.rb" default='';
 		}
 
-		application.serviceFactory.getBean('utility').suppressDebugging();
-
 		if(len(request.context.rb)){
 			session.rb=request.context.rb;
 			if(ListFirst(server.coldfusion.productVersion) >= 10){

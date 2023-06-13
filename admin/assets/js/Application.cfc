@@ -53,7 +53,6 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		<cfoutput>Access Restricted.</cfoutput>
 		<cfabort>
 		</cfif>
-		<cfsetting showdebugoutput="no">
 		<cfinclude template="#repeatString('../',depth)#core/appcfc/onRequestStart_include.cfm">
 		<cfinclude template="#repeatString('../',depth)#core/appcfc/scriptProtect_include.cfm">
 		<cfreturn true>
