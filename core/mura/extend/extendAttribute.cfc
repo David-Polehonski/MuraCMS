@@ -108,17 +108,13 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 			<cfset setOptionLabelList(arguments.data.optionLabelList) />
 
 		<cfelseif isStruct(arguments.data)>
-		<!--- <cfdump var="#arguments.data#"><cfabort> --->
+
 			<cfloop collection="#arguments.data#" item="prop">
 				<cfif isdefined("variables.instance.#prop#")>
 					<cfset tempFunc=this["set#prop#"]>
           			<cfset tempFunc(arguments.data['#prop#'])>
 				</cfif>
 			</cfloop>
-
-		<!--- 	<cfif getType eq "radio" or getType() eq "select">
-				<cfset setOptions(arguments.data)/>
-			</cfif> --->
 
 		</cfif>
 

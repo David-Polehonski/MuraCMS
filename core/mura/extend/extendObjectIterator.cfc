@@ -49,16 +49,12 @@ component extends="mura.iterator.queryIterator" output="false" hint="This provid
 	variables.manager="";
 
 	public function init(configBean="") output=false {
-		// <cfargument name="manager" default="">
+
 		super.init(argumentCollection=arguments);
 		if ( isObject(arguments.configBean) ) {
 			setConfigBean(arguments.configBean);
 		}
-		/*
-	<cfif isObject(arguments.manager)>
-		<cfset setManager(arguments.manager)>
-	</cfif>
-	*/
+
 		return this;
 	}
 
