@@ -623,19 +623,19 @@ Blog: www.codfusion.com--->
 				<!--- Lucee uses lowercase cookies the setCookieLegacy method allows it to maintain case--->
 				<cfif server.coldfusion.productname neq 'Coldfusion Server'>
 					<cfif application.configBean.getSessionCookiesExpires() EQ "" OR application.configBean.getSessionCookiesExpires() EQ "session" OR application.configBean.getSessionCookiesExpires() EQ "session only">
-						<cfset setCookieLegacy(name='cfid', value=sessionTokens.CFID, maintainCase=true)>
-						<cfset setCookieLegacy(name='cftoken', value=sessionTokens.CFTOKEN, maintainCase=true)>
+						<cfset setCookie(name='cfid', value=sessionTokens.CFID, maintainCase=true)>
+						<cfset setCookie(name='cftoken', value=sessionTokens.CFTOKEN, maintainCase=true)>
 					<cfelse>
-						<cfset setCookieLegacy(name='cfid', value=sessionTokens.CFID, expires=application.configBean.getSessionCookiesExpires(), maintainCase=true)>
-						<cfset setCookieLegacy(name='cftoken', value=sessionTokens.CFTOKEN, expires=application.configBean.getSessionCookiesExpires(), maintainCase=true)>
+						<cfset setCookie(name='cfid', value=sessionTokens.CFID, expires=application.configBean.getSessionCookiesExpires(), maintainCase=true)>
+						<cfset setCookie(name='cftoken', value=sessionTokens.CFTOKEN, expires=application.configBean.getSessionCookiesExpires(), maintainCase=true)>
 					</cfif>
 				<cfelse>
 					<cfif application.configBean.getSessionCookiesExpires() EQ "" OR application.configBean.getSessionCookiesExpires() EQ "session" OR application.configBean.getSessionCookiesExpires() EQ "session only">
-						<cfset setCookieLegacy(name="CFID", value=sessionTokens.CFID) />
-						<cfset setCookieLegacy(name="CFTOKEN", value=sessionTokens.CFTOKEN)/>
+						<cfset setCookie(name="CFID", value=sessionTokens.CFID) />
+						<cfset setCookie(name="CFTOKEN", value=sessionTokens.CFTOKEN)/>
 					<cfelse>
-						<cfset setCookieLegacy(name="CFID", value=sessionTokens.CFID, expires=application.configBean.getSessionCookiesExpires()) />
-						<cfset setCookieLegacy(name="CFTOKEN", value=sessionTokens.CFTOKEN, expires=application.configBean.getSessionCookiesExpires()) />
+						<cfset setCookie(name="CFID", value=sessionTokens.CFID, expires=application.configBean.getSessionCookiesExpires()) />
+						<cfset setCookie(name="CFTOKEN", value=sessionTokens.CFTOKEN, expires=application.configBean.getSessionCookiesExpires()) />
 					</cfif>
 				</cfif>
 			</cfif>
@@ -668,6 +668,8 @@ Blog: www.codfusion.com--->
 	<cfargument name="expires" type="string" default="never">
   <cfargument name="maintainCase" type="boolean" default="true">
 	<cfargument name="httpOnly" type="boolean" default="true">
+	<cfargument name="secure" type="boolean" default="true">
+	<cfargument name="samesite" type="string" default="none">
 
 	<cfif variables.configBean.getSecureCookies()>
 		<cfset arguments.secure=true>

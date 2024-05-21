@@ -939,19 +939,13 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 				</cfif>
 			</cfif>
 
-			<cfif listFindNoCase('small,medium,large,source',arguments.size)>
+			<cfif arguments.size neq 'custom'>
 				<cfif arguments.size eq "large">
 					<cfset imgSuffix="">
 				<cfelse>
 					<cfset imgSuffix="_" & lcase(arguments.size)>
 				</cfif>
 				<cfset returnURL=begin & "/cache/file/" & arguments.fileID & imgSuffix & "." & arguments.fileEXT>
-
-			<cfelseif arguments.size neq 'custom'>
-				<cfset returnURL = getCustomImage(image="#application.configBean.getFileDir()#/#site.getFilePoolID()#/cache/file/#arguments.fileID#.#arguments.fileExt#",size=arguments.size,siteID=site.getFilePoolID())>
- 				<cfif len(returnURL)>
- 					<cfset returnURL = begin & "/cache/file/" & returnURL>
- 				</cfif>
 			<cfelse>
 				<cfif not len(arguments.width)>
 					<cfset arguments.width="auto">
@@ -1021,7 +1015,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		<cfset cropper=imageRead(source)>
 
 		<!---
-			This a workaround to ensure jpegs can be process 
+			This a workaround to ensure jpegs can be process
 			https://luceeserver.atlassian.net/browse/LDEV-1874
 		--->
 		<cfif listFindNoCase('jpg,jpeg',rsMeta.fileExt)>
