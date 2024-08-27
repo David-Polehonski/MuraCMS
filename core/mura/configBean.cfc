@@ -46,7 +46,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 <cfset variables.instance=structNew()/>
 <cfset variables.instance.mode=""/>
 <cfset variables.autoupdateurl="https://github.com/blueriver/MuraCMS/archive/master.zip"/>
-<cfset variables.instance.version="7.1.0"/>
+<cfset variables.instance.version="7.2.1"/>
 <cfset variables.instance.title="Mura CMS"/>
 <cfset variables.instance.projectname="Mura CMS"/>
 <cfset variables.instance.projectname="Mura CMS"/>
@@ -230,7 +230,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 <cffunction name="passwordsExpire" output="false">
 	<cfset var expireIn=getValue(property="expirePasswords", defaultValue=0)>
 
-	<cfif not isNumeric(expireIn) or expireIn eq 0>	
+	<cfif not isNumeric(expireIn) or expireIn eq 0>
 		<cfreturn false>
 	<cfelse>
 		<cfreturn true>
@@ -2008,7 +2008,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		<cfset var beanInstance=''>
 		<cfset var $=''>
 		<cfset var applyGlobal=false>
-	
+
 		<cfdirectory name="rs" directory="#expandPath(arguments.dir)#" action="list" filter="">
 		<cfloop query="rs">
 			<cfif rs.type eq 'dir'>
@@ -2021,7 +2021,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 				<cfset var tracePoint=initTracepoint("Registering Eventhandler: #package#.#beanName#")>
 				<cftry>
 					<cfset beanName=listFirst(rs.name,'.')>
-					
+
 					<cfif not structKeyExists(application.appHandlerLookUp,'#package#.#beanName#')>
 						<cfset beanInstance=createObject('component','#package#.#beanName#').init()>
 						<cfset application.appHandlerLookUp['#package#.#beanName#']=beanInstance>

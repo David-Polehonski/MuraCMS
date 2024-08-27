@@ -80,8 +80,10 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 
 		<cfhttp attributeCollection='#getHTTPAttrs(
 				url="#getAutoUpdateURL()#",
+				redirect="true",
 				result="diff",
-				getasbinary="yes")#'>
+				getasbinary="yes")#'
+				>
 		</cfhttp>
 
 		<cfif not IsBinary(diff.filecontent)>
@@ -105,44 +107,36 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 			<cfset zipUtil.extract(zipFilePath:"#currentDir##zipFileName#.zip",
 								extractPath: "#currentDir##zipFileName#")>
 
-			<cfset trimPath=listFirst(rs.entry,variables.fileDelim)>
-			<cfset trimLen=len(trimPath)>
 
+			<cfset trimPath=listFirst(rs.name,variables.fileDelim)>
+			<cfset trimLen=len(trimPath)>
 			<cfquery name="rs" dbType="query">
-			select * from rs where entry not like '#trimPath##variables.fileDelim#sites#variables.fileDelim#%'
-			and entry not like '#trimPath##variables.fileDelim#modules#variables.fileDelim#%'
-			and entry not like '#trimPath##variables.fileDelim#themes#variables.fileDelim#%'
-			and entry not like '#trimPath##variables.fileDelim#content_types#variables.fileDelim#%'
-			and entry not like '#trimPath##variables.fileDelim#config#variables.fileDelim#%'
-			and entry not like '#trimPath##variables.fileDelim#plugins#variables.fileDelim#%'
+			select * from rs where name not like '#trimPath##variables.fileDelim#sites#variables.fileDelim#%'
+			and name not like '#trimPath##variables.fileDelim#modules#variables.fileDelim#%'
+			and name not like '#trimPath##variables.fileDelim#themes#variables.fileDelim#%'
+			and name not like '#trimPath##variables.fileDelim#content_types#variables.fileDelim#%'
+			and name not like '#trimPath##variables.fileDelim#config#variables.fileDelim#%'
+			and name not like '#trimPath##variables.fileDelim#plugins#variables.fileDelim#%'
 			</cfquery>
 
 			<cfloop query="rs">
-				<cfif not listFind("README.md,.gitignore",listLast(rs.entry,variables.fileDelim))>
-					<cfset destination="#baseDir##right(rs.entry,len(rs.entry)-trimLen)#">
-					<!---<cftry>--->
+				<cfif not listFind("README.md,.gitignore",listLast(rs.name,variables.fileDelim))>
+					<cfset destination="#baseDir##variables.fileDelim##rs.name#">
+
 						<cfif fileExists(destination)>
 							<cffile action="delete" file="#destination#">
 						</cfif>
-						<cfset destination=left(destination,len(destination)-len(listLast(destination,variables.fileDelim)))>
+						<cfset destinationDir = left(destination,len(destination)-len(listLast(destination,variables.fileDelim))) >
 
 						<cfif variables.configBean.getAdminDir() neq "/admin">
 							<cfset destination=ReplaceNoCase(destination, "#variables.fileDelim#admin#variables.fileDelim#", "#replace(variables.configBean.getAdminDir(),'/',variables.fileDelim,'all')##variables.fileDelim#" )>
 						</cfif>
 
-						<cfif not directoryExists(destination)>
-							<cfset variables.fileWriter.createDir(directory="#destination#")>
+						<cfif not directoryExists(destinationDir)>
+							<cfset variables.fileWriter.createDir(directory="#destinationDir#")>
 						</cfif>
-						<cfset variables.fileWriter.moveFile(source="#currentDir##zipFileName##variables.fileDelim##rs.entry#",destination="#destination#")>
-							<!---
-						<cfcatch>
-							<!--- patch to make sure autoupdates do not stop for mode errors --->
-							<cfif not findNoCase("change mode of file",cfcatch.message) and not listFindNoCase('jar,class',listLast(rs.entry,"."))>
-								<cfrethrow>
-							</cfif>
-						</cfcatch>
-					</cftry>--->
-					<cfset arrayAppend(updatedArray,"#destination##listLast(rs.entry,variables.fileDelim)#")>
+						<cfset variables.fileWriter.moveFile(source="#currentDir##zipFileName##variables.fileDelim##rs.name#",destination="#destination#")>
+					<cfset arrayAppend(updatedArray,"#destination##listLast(rs.name,variables.fileDelim)#")>
 				</cfif>
 			</cfloop>
 
