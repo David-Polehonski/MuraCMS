@@ -145,6 +145,8 @@ this.applicationTimeout = createTimeSpan(3,0,0,0);
 //  Where should cflogin stuff persist
 
 this.sessionManagement = !(left(cgi.path_info,11) == '/_api/rest/');
+this.sessioncookie.secure="true";
+this.sessioncookie.sameSite="none";
 
 if(this.sessionManagement){
 	this.loginStorage = "session";
@@ -579,11 +581,11 @@ if(len(getINIProperty('s3accessKeyId',''))){
 
 if(len(getINIProperty('s3awsSecretKey',''))){
 	this.s3.awsSecretKey=evalSetting(getINIProperty('s3awsSecretKey',''));
-} 
+}
 
 if(len(getINIProperty('s3SecretKey',''))){
 	this.s3.awsSecretKey=evalSetting(getINIProperty('s3SecretKey',''));
-} 
+}
 
 if(len(getINIProperty('s3Acl',''))){
 	this.s3.acl=evalSetting(getINIProperty('s3Acl',''));
