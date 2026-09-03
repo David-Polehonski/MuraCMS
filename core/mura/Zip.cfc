@@ -305,10 +305,11 @@
 		<cfargument name="excludeDirs"   required="no"  type="string"             hint="| (Chr(124)) delimited list of dirs to not extract.">
 		<cfargument name="extractDirsToTop"   required="no"  type="string" >
 
-		<cfzip 
+		<cfzip
 			action="unzip"
 			file="#arguments.zipFilePath#"
 			destination="#arguments.extractPath#"
+			overwrite="true"
 			/>
 		<cfreturn true/>
 	</cffunction>
