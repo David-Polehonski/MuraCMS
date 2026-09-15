@@ -517,7 +517,9 @@ QuerySetCell( myQuery , colName[ c ] , myArray[ r ][colName[ c ] ] , r );
 		return aReturn;
 	}
 
-	function queryToStruct( qry ) {
+	// Renamed from queryToStruct: Lucee 6 added a built in function of that name
+	// and refuses to compile a UDF declaration that shadows it.
+	function muraQueryToStruct( qry ) {
 
 		var str = {};
 

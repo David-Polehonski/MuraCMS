@@ -145,8 +145,35 @@ this.applicationTimeout = createTimeSpan(3,0,0,0);
 //  Where should cflogin stuff persist
 
 this.sessionManagement = !(left(cgi.path_info,11) == '/_api/rest/');
-this.sessioncookie.secure="true";
-this.sessioncookie.sameSite="none";
+
+/*  Session cookies are Secure + SameSite=none by default, which is what a public
+	HTTPS install needs. Installs served over plain HTTP (local containers, CI)
+	cannot use that combination at all, because browsers drop SameSite=None
+	cookies that are not also Secure, which silently breaks admin login.
+
+	Resolution order (first match wins):
+		1. MURA_SECURECOOKIES environment variable - this is the same variable
+		   configBean's securecookies setting already picks up in
+		   onApplicationStart_include.cfm, so the two stay in step.
+		2. securesessioncookies ini key / MURA_SECURESESSIONCOOKIES env var.
+		3. true.
+
+	NOTE: the ini key `securecookies` is deliberately NOT read here. It ships as
+	`false` in core/templates/settings.template.cfm, so honouring it would quietly
+	downgrade every existing install's session cookie on upgrade. */
+variables.muraSecureSessionCookies=evalSetting(getINIProperty("securesessioncookies","true"));
+
+if ( structKeyExists(request.muraSysEnv,'MURA_SECURECOOKIES') ) {
+	variables.muraSecureSessionCookies=request.muraSysEnv['MURA_SECURECOOKIES'];
+}
+
+if ( isBoolean(variables.muraSecureSessionCookies) && !variables.muraSecureSessionCookies ) {
+	this.sessioncookie.secure="false";
+	this.sessioncookie.sameSite="lax";
+} else {
+	this.sessioncookie.secure="true";
+	this.sessioncookie.sameSite="none";
+}
 
 if(this.sessionManagement){
 	this.loginStorage = "session";
@@ -294,6 +321,21 @@ if ( len(variables.clientStorageCheck) ) {
 	this.clientStorage = variables.clientStorageCheck;
 }
 this.ormenabled =  evalSetting(getINIProperty("ormenabled","true"));
+
+/*  Lucee 6 unbundled the Hibernate ORM extension. Mura core declares no ORM
+	entities (ormcfclocation is empty out of the box), so a missing extension
+	should never stop the application from starting. If ORM is switched on but
+	Hibernate is not installed, turn it back off and say so in the log.
+	Adobe ColdFusion is left alone - it still ships ORM in the box. */
+if ( isBoolean(this.ormenabled) && this.ormenabled && server.coldfusion.productname == 'lucee' && !isORMExtensionInstalled() ) {
+	this.ormenabled = false;
+	writeLog(
+		type="information"
+		, file="application"
+		, text="Mura: ormenabled was true but the Hibernate (ORM) extension is not installed on this Lucee server. ORM has been disabled. Install the Hibernate extension if a plugin or theme needs it."
+	);
+}
+
 this.ormSettings={};
 this.ormSettings.cfclocation=[];
 try {
@@ -482,6 +524,61 @@ if(request.muraInDocker && (len(getSystemEnvironmentSetting('MURA_DATABASE')) ||
 				, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
 			}
 		};
+
+		/*  Lucee 6's built in mssql datasource template does not carry the
+			`database` key through to the JDBC url: the datasource resolves to
+			jdbc:sqlserver://<host>:<port> with no databaseName, so Mura installs
+			its tables into the server's default database (master) instead of
+			MURA_DATABASE. Build the url explicitly instead of relying on the
+			template. mysql/postgresql/oracle are left on the host/database/port
+			form, which still resolves correctly.
+
+			MURA_DBCONNECTIONPARAMS optionally supplies extra ";" delimited JDBC
+			properties, eg. "encrypt=true;trustServerCertificate=true". It is
+			empty by default so that the generated url matches what Lucee 6
+			already produces apart from the databaseName. */
+		if ( server.coldfusion.productname == 'lucee' && driverName == 'mssql' ) {
+			variables.muraDSName=getSystemEnvironmentSetting('MURA_DATASOURCE');
+			variables.muraDBPort=getSystemEnvironmentSetting('MURA_DBPORT');
+
+			if ( !len(variables.muraDBPort) ) {
+				variables.muraDBPort=1433;
+			}
+
+			variables.muraDBParams=getSystemEnvironmentSetting('MURA_DBCONNECTIONPARAMS');
+
+			if ( len(variables.muraDBParams) && left(variables.muraDBParams,1) != ';' ) {
+				variables.muraDBParams=';' & variables.muraDBParams;
+			}
+
+			variables.muraDBBaseURL='jdbc:sqlserver://#getSystemEnvironmentSetting('MURA_DBHOST')#:#variables.muraDBPort#';
+
+			this.datasources[variables.muraDSName][connectionStringVarName]
+				= variables.muraDBBaseURL
+				& ';databaseName=' & getSystemEnvironmentSetting('MURA_DATABASE')
+				& variables.muraDBParams;
+
+			// nodatabase is used by core/appcfc/setup_check.cfm to CREATE DATABASE,
+			// so it must connect to the server without naming a database.
+			this.datasources.nodatabase[connectionStringVarName]
+				= variables.muraDBBaseURL & variables.muraDBParams;
+
+			// Honour the same driver overrides the MURA_DBCONNECTIONSTRING branch does.
+			if ( len(getSystemEnvironmentSetting('MURA_DBCLASS')) ) {
+				this.datasources[variables.muraDSName].class = getSystemEnvironmentSetting('MURA_DBCLASS');
+				this.datasources.nodatabase.class = getSystemEnvironmentSetting('MURA_DBCLASS');
+			}
+
+			if ( len(getSystemEnvironmentSetting('MURA_DBBUNDLENAME')) ) {
+				this.datasources[variables.muraDSName].bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
+				this.datasources.nodatabase.bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
+			}
+
+			if ( len(getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION')) ) {
+				this.datasources[variables.muraDSName].bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+				this.datasources.nodatabase.bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+			}
+		}
 	}
 
 	if (server.coldfusion.productname == 'lucee') {
@@ -708,6 +805,43 @@ function commitTracePoint(tracePointID) output=false {
 		tracePoint.duration=tracePoint.stop-tracePoint.start;
 		tracePoint.total=tracePoint.stop-request.muraRequestStart;
 	}
+}
+
+/*  Is the Hibernate (ORM) extension available on this Lucee server?
+	Lucee 6 no longer bundles it. Any failure to answer the question is treated
+	as "not installed" so that application start-up can never be blocked by the
+	check itself. */
+boolean function isORMExtensionInstalled() output=false {
+	var installed='';
+
+	try {
+		installed=extensionList();
+	} catch (any e) {
+		return false;
+	}
+
+	if ( !isQuery(installed) ) {
+		return false;
+	}
+
+	try {
+		var hasName=listFindNoCase(installed.columnList,'name');
+		var hasId=listFindNoCase(installed.columnList,'id');
+
+		for ( var i=1; i <= installed.recordCount; i++ ) {
+			if ( hasName && findNoCase('hibernate',installed['name'][i]) ) {
+				return true;
+			}
+			// Lucee's Hibernate extension id, in case the label ever changes.
+			if ( hasId && installed['id'][i] == '6D2AF33D-1727-4342-8D0AD1AB3EBCC63A' ) {
+				return true;
+			}
+		}
+	} catch (any e) {
+		return false;
+	}
+
+	return false;
 }
 
 function getSystemEnvironmentSetting(required string name){
