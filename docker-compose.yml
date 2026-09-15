@@ -17,7 +17,7 @@ services:
         LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
     image: vintagetravel/muracms:7.3.0-dev
     ports:
-      - "8080:80"
+      - "${MURA_HTTP_PORT:-80}:80"
     environment:
       LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
 

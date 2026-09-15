@@ -41,17 +41,40 @@ This starts:
 - `mssql` - SQL Server 2022, healthchecked with `sqlcmd` before `mura` is
   allowed to start (`depends_on: condition: service_healthy`), data in the
   named volume `mssql_data`.
-- `mura` - built from `docker/Dockerfile`, published on `http://localhost:8080`,
-  with `sites/`, `plugins/`, `themes/`, `modules/` and `config/` bind-mounted
-  from the repo so edits show up without a rebuild.
+- `mura` - built from `docker/Dockerfile`, published on `http://localhost/`
+  by default (port `80`, controlled by `MURA_HTTP_PORT` - see below), with
+  `sites/`, `plugins/`, `themes/`, `modules/` and `config/` bind-mounted from
+  the repo so edits show up without a rebuild.
 
 First run: because `MURA_DATASOURCE` is set, Mura's unattended setup
 (`core/appcfc/setup_check.cfm`) creates the database and runs the install
-wizard automatically the first time it's asked - `MURA_WARMUP=true` triggers
-that by requesting `/` then `/?appreload&applydbupdates` itself in the
-background shortly after boot, so `docker compose logs -f mura` will show it
-happening without you needing to open a browser first. Once it settles, log
-in to `/admin` with `MURA_ADMIN_USERNAME` / `MURA_ADMIN_PASSWORD`.
+wizard automatically the first time it's asked. By default `MURA_WARMUP=true`
+triggers that itself: `docker/entrypoint.sh` waits for nginx/Lucee to accept
+connections, then makes a `GET /` (compiles the application and, since no
+site domain is recorded yet, is the request Mura's setup uses to record the
+default site's domain) followed by `GET /?appreload&applydbupdates` (applies
+pending updates) - both from *inside* the container, against
+`http://127.0.0.1:80` by default, in the background shortly after boot, so
+`docker compose logs -f mura` will show it happening without you needing to
+open a browser first. Once it settles, log in to `/admin` with
+`MURA_ADMIN_USERNAME` / `MURA_ADMIN_PASSWORD`.
+
+Because that warm-up request is made from inside the container to port 80,
+the default site's domain ends up recorded as `localhost` (no port) - which
+is exactly what a browser at `http://localhost/` needs. **If you change
+`MURA_HTTP_PORT`** to anything other than `80`, the warm-up still hits
+`localhost:80` internally, so the recorded domain still has no port and
+Mura will 301-redirect any request to `http://localhost:<port>/` back to
+`http://localhost/`, where nothing is published. Either:
+
+- after first boot, change the default site's domain to
+  `localhost:<MURA_HTTP_PORT>` in Mura's Site Settings, or
+- set `MURA_WARMUP=false` so no warm-up request happens automatically, and
+  instead let the *first* request come from your browser at the published
+  port - Mura's setup records whatever host that request arrives on, so
+  hitting `http://localhost:<MURA_HTTP_PORT>/` yourself first fixes the
+  domain correctly (just expect that first load to run the install wizard
+  inline instead of it having happened in the background already).
 
 This stack is dev-only: plain HTTP, `MURA_SECURECOOKIES=false` (see
 [TLS and secure cookies](#tls-and-secure-cookies)), and passwords sourced
@@ -95,6 +118,7 @@ ones this image and its compose stack rely on directly. Any other
 | `MURA_DBCONNECTIONSTRING`, `MURA_DBCLASS` | Use a full JDBC connection string instead of host/port/database |
 | `MURA_ADMIN_USERNAME`, `MURA_ADMIN_PASSWORD`, `MURA_ADMINEMAIL` | Mura CMS admin account created by unattended setup |
 | `MURA_APPRELOADKEY` | Shared secret required on `?appreload` requests |
+| `MURA_HTTP_PORT` | This stack's own compose variable (`docker-compose.yml`), not read by Mura or the image: host port the container's nginx (`:80`) is published on. Defaults to `80` - see [Local development stack](#local-development-stack) for what changing it requires |
 | `MURA_ORMENABLED` | Set `false` unless a plugin needs Hibernate ORM |
 | `MURA_ALLOWAUTOUPDATES` | Set `false` - updates belong in the image build, not a running container |
 | `MURA_SECURECOOKIES` | Set `false` for plain-HTTP dev; leave at Mura's default (effectively `true`) once TLS terminates in front of the site |
