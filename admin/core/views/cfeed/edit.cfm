@@ -42,6 +42,9 @@ modified version; it is your choice whether to do so, or to make such modified v
 version 2 without this exception.  You may, if you choose, apply this exception to your own modified versions of Mura CMS.
 --->
 <cfset event=request.event>
+<!--- feedBean defaults its own type to "local" and getEditURL() always appends
+	it, so fall back to the same default when the url parameter is omitted. --->
+<cfparam name="rc.type" default="local">
 <cfinclude template="js.cfm">
 <cfif rc.type eq 'Local'>
 <cfsilent>

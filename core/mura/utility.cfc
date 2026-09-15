@@ -664,17 +664,59 @@ Blog: www.codfusion.com--->
 	<cfreturn this>
 </cffunction>
 
+<cffunction name="getUseSecureCookies" returntype="boolean" output="false"
+	hint="Should Mura's own cookies be emitted Secure + SameSite=none? Mirrors the resolution core/appcfc/applicationSettings.cfm uses for this.sessioncookie.">
+
+	<!--- Default on: this is what a public HTTPS install needs and what Mura has
+		always emitted, so an install that configures nothing is unaffected. --->
+	<cfset var useSecure=true>
+	<cfset var secureSessionCookies="">
+
+	<!--- 1. The MURA_SECURECOOKIES environment variable is the explicit opt out.
+		It is the same variable applicationSettings.cfm reads for
+		this.sessioncookie and that onApplicationStart_include.cfm feeds into
+		configBean's securecookies setting, so the three stay in step. --->
+	<cfif structKeyExists(request,'muraSysEnv')
+			and structKeyExists(request.muraSysEnv,'MURA_SECURECOOKIES')
+			and isBoolean(request.muraSysEnv['MURA_SECURECOOKIES'])>
+		<cfset useSecure=request.muraSysEnv['MURA_SECURECOOKIES']>
+	<cfelse>
+		<!--- 2. securesessioncookies ini key / MURA_SECURESESSIONCOOKIES. --->
+		<cfset secureSessionCookies=variables.configBean.getValue('securesessioncookies','true')>
+
+		<cfif isBoolean(secureSessionCookies)>
+			<cfset useSecure=secureSessionCookies>
+		</cfif>
+	</cfif>
+
+	<!--- getSecureCookies() can only ever force secure cookies ON: its default is
+		false, which means "not configured", not "off". Applied last so that a
+		contradictory configuration fails closed. --->
+	<cfif isBoolean(variables.configBean.getSecureCookies()) and variables.configBean.getSecureCookies()>
+		<cfset useSecure=true>
+	</cfif>
+
+	<cfreturn useSecure>
+</cffunction>
+
 <cffunction name="setCookie" output="false">
   <cfargument name="name" type="string" required="true">
   <cfargument name="value" type="string" required="true">
 	<cfargument name="expires" type="string" default="never">
   <cfargument name="maintainCase" type="boolean" default="true">
 	<cfargument name="httpOnly" type="boolean" default="true">
-	<cfargument name="secure" type="boolean" default="true">
-	<cfargument name="samesite" type="string" default="none">
+	<cfargument name="secure" type="boolean" default="#getUseSecureCookies()#">
+	<cfargument name="samesite" type="string" default="#getUseSecureCookies() ? 'none' : 'lax'#">
 
 	<cfif variables.configBean.getSecureCookies()>
 		<cfset arguments.secure=true>
+	</cfif>
+
+	<!--- SameSite=None is only honoured alongside Secure: a browser drops a None
+		cookie that is not also Secure, which silently breaks the session on a
+		plain HTTP origin. The two attributes have to move together. --->
+	<cfif not arguments.secure and arguments.samesite eq 'none'>
+		<cfset arguments.samesite='lax'>
 	</cfif>
 
 	<cfif len(variables.configBean.getCookieDomain())>
@@ -714,7 +756,8 @@ Blog: www.codfusion.com--->
     <cfargument name="expires" type="any" default="" hint="''=session only|now|never|[date]|[number of days]">
     <cfargument name="domain" type="string" default="">
     <cfargument name="path" type="string" default="/">
-    <cfargument name="secure" type="boolean" default="false">
+    <cfargument name="secure" type="boolean" default="#getUseSecureCookies()#">
+    <cfargument name="samesite" type="string" default="#getUseSecureCookies() ? 'none' : 'lax'#">
     <cfargument name="httponly" type="boolean" default="true">
     <cfargument name="maintainCase" type="boolean" default="false">
     <cfset var c = "">
@@ -722,6 +765,14 @@ Blog: www.codfusion.com--->
 
 	<cfif variables.configBean.getSecureCookies()>
 		<cfset arguments.secure=true>
+	</cfif>
+
+	<!--- SameSite=None is only honoured alongside Secure, so the two move
+		together. This is the path JSESSIONID is re-emitted on, and it previously
+		emitted no SameSite at all, which silently downgraded the session cookie
+		Lucee had already set from this.sessioncookie. --->
+	<cfif not arguments.secure and arguments.samesite eq 'none'>
+		<cfset arguments.samesite='lax'>
 	</cfif>
 
 	<cfif len(variables.configBean.getCookieDomain())>
@@ -774,6 +825,9 @@ Blog: www.codfusion.com--->
     </cfif>
     <cfif Arguments.httponly>
         <cfset c = c & "HttpOnly;">
+    </cfif>
+    <cfif Len(Arguments.samesite) gt 0>
+        <cfset c = c & "SameSite=#Arguments.samesite#;">
     </cfif>
     <cfheader name="SET-COOKIE" value="#c#" />
 </cffunction>

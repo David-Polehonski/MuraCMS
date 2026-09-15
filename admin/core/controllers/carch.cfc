@@ -402,7 +402,9 @@ component extends="controller" output="false" {
 					session.openSectionList=listAppend(session.openSectionList,rc.contentBean.getParentID());
 				}
 			}
-			if ( !arguments.rc.murakeepediting ) {
+			// rc.contentBean is only populated by the action branches above, so it
+			// is absent whenever no action ran. Leave murakeepediting false then.
+			if ( !arguments.rc.murakeepediting && structKeyExists(arguments.rc,'contentBean') ) {
 				arguments.rc.murakeepediting=arguments.rc.contentBean.getDisplayConflicts().hasNext();
 			}
 			if ( (arguments.rc.closeCompactDisplay != 'true'  || arguments.rc.murakeepediting) && arguments.rc.action != 'multiFileUpload' ) {
