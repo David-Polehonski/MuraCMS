@@ -18,6 +18,13 @@ services:
     image: vintagetravel/muracms:7.3.0-dev
     ports:
       - "${MURA_HTTP_PORT:-80}:80"
+      # Direct access to Tomcat/Lucee, bypassing nginx. nginx deliberately
+      # 404s /lucee (see docker/nginx/default.conf), so this is how you reach
+      # the Lucee server administrator at http://localhost:8888/lucee/admin/server.cfm
+      # to inspect datasources, extensions, caches and logs. Bound to the
+      # loopback interface only, so it is never reachable from the network,
+      # and absent from any production compose - do not copy this line into one.
+      - "127.0.0.1:${LUCEE_ADMIN_PORT:-8888}:8888"
     environment:
       LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
 
