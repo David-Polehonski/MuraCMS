@@ -350,6 +350,183 @@ else
   note "The test page '$TITLE' may still exist; remove it from the admin."
 fi
 
+# ==================================== 4. container / Lucee 6 regressions ====
+#
+# Regression guards for the defects found in the first downstream site build
+# (see docker/README.md, "What the image guarantees"). They need `docker
+# compose` access to the running stack - they write a scratch .cfm into the
+# site directory inside the container, edit it, and read the container's logs -
+# so they are skipped with SKIP_DOCKER=1, or when docker compose cannot see a
+# service called COMPOSE_SERVICE (default "mura") from the current directory.
+
+COMPOSE_SERVICE="${COMPOSE_SERVICE:-mura}"
+SMOKE_SITE_DIR="${MURA_SMOKE_SITE_DIR:-/var/www/sites/$SITE_ID}"
+
+dcx() { docker compose exec -T "$COMPOSE_SERVICE" sh -c "$1"; }
+
+if [ "${SKIP_DOCKER:-0}" != "1" ] && command -v docker >/dev/null 2>&1 \
+   && docker compose ps -q "$COMPOSE_SERVICE" 2>/dev/null | grep -q .; then
+
+  head1 "Container and Lucee 6 regression checks (docker compose service: $COMPOSE_SERVICE)"
+
+  # sites/Application.cfc answers "Access Restricted." to any template under a
+  # site that is not index.cfm, a handful of named files, or something inside a
+  # "remote" directory - so the scratch template lives in sites/<site>/remote/.
+  SCRATCH="_smoke_${STAMP}.cfm"
+  SCRATCH_PATH="$SMOKE_SITE_DIR/remote/$SCRATCH"
+  SCRATCH_URL="$BASE_URL/sites/$SITE_ID/remote/$SCRATCH"
+  trap 'dcx "rm -f $SCRATCH_PATH" >/dev/null 2>&1; rm -rf "$WORK"' EXIT
+
+  # The scratch template runs under Mura's own Application.cfc, so it can use
+  # the live configBean and the Mura scope. It prints key=value lines.
+  dcx "mkdir -p $SMOKE_SITE_DIR/remote" >/dev/null 2>&1
+  sed "s/__STAMP__/$STAMP/g; s/__SITE__/$SITE_ID/g; s/__HOME__/$HOME_ID/g" <<'CFM' | dcx "cat > $SCRATCH_PATH"
+<cfsetting showdebugoutput="false">
+<cfcontent type="text/plain; charset=utf-8">
+<cfset out=[]>
+<cfset m=createObject("component","mura.MuraScope").init('__SITE__')>
+<cfset cfg=application.configBean>
+<cfset arrayAppend(out,"mode=" & cfg.getMode())>
+<cfset arrayAppend(out,"marker=SMOKE_MARKER_1")>
+<cfset arrayAppend(out,"inspect_template=" & getPageContext().getConfig().getInspectTemplate())>
+<cfset envKey=structKeyExists(request.muraSysEnv,'MURA_ENCRYPTIONKEY') ? request.muraSysEnv.MURA_ENCRYPTIONKEY : ''>
+<cfset arrayAppend(out,"key_len=" & len(cfg.getEncryptionKey()))>
+<cfset arrayAppend(out,"key_matches_env=" & (len(envKey) ? lcase(envKey eq cfg.getEncryptionKey()) : 'unset'))>
+<cfset iniPath=expandPath('/muraWRM/config/settings.ini.cfm')>
+<cfset arrayAppend(out,"ini_has_mode_section=" & lcase(structKeyExists(getProfileSections(iniPath), cfg.getMode())))>
+<cfset arrayAppend(out,"key_in_ini=" & lcase(len(getProfileString(iniPath, cfg.getMode(), 'encryptionkey')) gt 0))>
+<cfset arrayAppend(out,"key_hash=" & left(hash(cfg.getEncryptionKey()),10))>
+<cfset arrayAppend(out,"ini_key_hash=" & left(hash(getProfileString(iniPath, cfg.getMode(), 'encryptionkey')),10))>
+<cftry>
+	<cfset rs=m.getBean('content').getFeed().setSiteID('__SITE__').where().prop('releaseDate').isEQ('').getQuery()>
+	<cfset arrayAppend(out,"feed_date_empty=ok:" & rs.recordcount)>
+	<cfcatch><cfset arrayAppend(out,"feed_date_empty=ERROR:" & cfcatch.message)></cfcatch>
+</cftry>
+<cftry>
+	<cfset rs=m.getBean('content').getFeed().setSiteID('__SITE__').where().prop('orderno').isEQ('').getQuery()>
+	<cfset arrayAppend(out,"feed_numeric_empty=ok:" & rs.recordcount)>
+	<cfcatch><cfset arrayAppend(out,"feed_numeric_empty=ERROR:" & cfcatch.message)></cfcatch>
+</cftry>
+<cftry>
+	<cfset em=cfg.getClassExtensionManager()>
+	<cfset st=em.getSubTypeByName(type='Page',subtype='Default',siteid='__SITE__')>
+	<cfif st.getIsNew()><cfset st.save()></cfif>
+	<cfset es=st.getExtendSetBean()>
+	<cfset es.setSiteID('__SITE__')><cfset es.setName('Smoke')><cfset es.load()>
+	<cfif es.getIsNew()><cfset es.save()></cfif>
+	<cfset at=es.getAttributeBean()>
+	<cfset at.setSiteID('__SITE__')><cfset at.setName('smokeDate')><cfset at.load()>
+	<cfif at.getIsNew()>
+		<cfset at.setLabel('Smoke Date')><cfset at.setType('Date')><cfset at.setValidation('Date')><cfset at.save()>
+	</cfif>
+	<cfset em.purgeDefinitionsQuery()>
+	<cfset node=m.getBean('content').set({siteid='__SITE__',parentid='__HOME__',type='Page',subtype='Default',title='Smoke Extend __STAMP__',approved=1,smokeDate=now()}).save()>
+	<cfset rs=m.getBean('content').getFeed().setSiteID('__SITE__').where().prop('smokeDate').isEQ('').getQuery()>
+	<cfset arrayAppend(out,"feed_extdate_empty=ok:" & rs.recordcount)>
+	<cfset rs=m.getBean('content').getFeed().setSiteID('__SITE__').addParam(field='smokeDate',criteria='',condition='=',datatype='date').getQuery()>
+	<cfset arrayAppend(out,"feed_extdate_typed_empty=ok:" & rs.recordcount)>
+	<cfset rs=m.getBean('content').getFeed().setSiteID('__SITE__').where().prop('smokeDate').isGT(dateAdd('d',-1,now())).getQuery()>
+	<cfset arrayAppend(out,"feed_extdate_value=ok:" & rs.recordcount)>
+	<cfset node.delete()>
+	<cfcatch><cfset arrayAppend(out,"feed_extdate_empty=ERROR:" & cfcatch.message & " " & cfcatch.detail)></cfcatch>
+</cftry>
+<cfset writeLog(application=true, text="smoke-log-__STAMP__")>
+<cfset arrayAppend(out,"logged=smoke-log-__STAMP__")>
+<cfoutput>#arrayToList(out, chr(10))#</cfoutput>
+CFM
+
+  # kv <file> <key> -> value of "key=..." in the scratch output
+  kv() { grep "^$2=" "$1" | head -1 | cut -d= -f2- | tr -d '\r'; }
+
+  code=$(get "$WORK/sm1" "$SCRATCH_URL" -L)
+  [ "$code" = "200" ] && [ "$(kv "$WORK/sm1" marker)" = "SMOKE_MARKER_1" ]
+  check "scratch template executes under Mura's Application.cfc" $? "http=$code url=$SCRATCH_URL"
+
+  # --- (7) MURA_MODE works on a clean database ----------------------------
+  want_mode=$(dcx 'printf %s "${MURA_MODE:-production}"' 2>/dev/null | tr -d '\r')
+  got_mode=$(kv "$WORK/sm1" mode)
+  [ -n "$got_mode" ] && [ "$got_mode" = "${want_mode:-production}" ]
+  check "configBean.getMode() is '$want_mode' (MURA_MODE honoured on first boot)" $? "getMode()=$got_mode ini_has_[$want_mode]_section=$(kv "$WORK/sm1" ini_has_mode_section)"
+  [ "$(kv "$WORK/sm1" ini_has_mode_section)" = "true" ]
+  check "config/settings.ini.cfm has a [$want_mode] section" $? ""
+
+  # --- (6) encryption key is explicit, or persisted ------------------------
+  kme=$(kv "$WORK/sm1" key_matches_env); kii=$(kv "$WORK/sm1" key_in_ini); klen=$(kv "$WORK/sm1" key_len)
+  kh=$(kv "$WORK/sm1" key_hash); ikh=$(kv "$WORK/sm1" ini_key_hash)
+  if [ "$kme" = "unset" ]; then
+    [ "$kii" = "true" ] && [ "${klen:-0}" -gt 0 ] && [ -n "$kh" ] && [ "$kh" = "$ikh" ]
+    check "no MURA_ENCRYPTIONKEY: generated key is persisted to config/settings.ini.cfm and is the key in use" $? "key_len=$klen key_in_ini=$kii key_hash=$kh ini_key_hash=$ikh"
+    note "MURA_ENCRYPTIONKEY is not set for this container - set it; a generated key only survives as long as config/ does."
+  else
+    [ "$kme" = "true" ]
+    check "configBean uses MURA_ENCRYPTIONKEY from the environment" $? "key_len=$klen key_matches_env=$kme"
+  fi
+
+  # --- (8) Lucee 6 empty-string binds -------------------------------------
+  for k in feed_date_empty feed_numeric_empty feed_extdate_empty feed_extdate_typed_empty feed_extdate_value; do
+    v=$(kv "$WORK/sm1" "$k")
+    case "$v" in ok:*) r=0 ;; *) r=1 ;; esac
+    case "$k" in
+      feed_date_empty)         d="feed: prop('releaseDate').isEQ('') does not throw (date bind)" ;;
+      feed_numeric_empty)      d="feed: prop('orderno').isEQ('') does not throw (numeric bind)" ;;
+      feed_extdate_empty)      d="feed: Date extended attribute with '' criteria does not throw" ;;
+      feed_extdate_typed_empty) d="feed: typed (datatype=date) '' criteria binds as NULL" ;;
+      feed_extdate_value)      [ "$v" = "ok:1" ] || r=1; d="feed: Date extended attribute finds the node it was set on" ;;
+    esac
+    check "$d" $r "$k=$v"
+  done
+
+  # --- (2) an edited template is re-read without a restart ----------------
+  sleep 1
+  dcx "sed -i 's/SMOKE_MARKER_1/SMOKE_MARKER_2/' $SCRATCH_PATH"
+  code=$(get "$WORK/sm2" "$SCRATCH_URL" -L)
+  [ "$code" = "200" ] && [ "$(kv "$WORK/sm2" marker)" = "SMOKE_MARKER_2" ]
+  check "edited template is served on the next request (no Lucee restart)" $? "http=$code marker=$(kv "$WORK/sm2" marker) inspectTemplate=$(kv "$WORK/sm2" inspect_template) (0=always 1=once 2=never 8=auto)"
+
+  # --- (1) Lucee log lines reach docker logs --------------------------------
+  found=0
+  for i in 1 2 3 4 5 6; do
+    docker compose logs --no-color "$COMPOSE_SERVICE" 2>/dev/null > "$WORK/logs"
+    grep -q "smoke-log-$STAMP" "$WORK/logs" && found=1 && break
+    sleep 2
+  done
+  [ "$found" -eq 1 ]
+  check "a writeLog(application=true) line appears in 'docker compose logs $COMPOSE_SERVICE'" $? "marker=smoke-log-$STAMP found=$found"
+  syms=$(dcx 'ls -l /opt/lucee/server/lucee-server/context/logs/application.log /opt/lucee/server/lucee-server/context/logs/exception.log 2>/dev/null | grep -c /dev/stdout' | tr -d '\r')
+  [ "${syms:-0}" -eq 2 ]
+  check "server-context application.log and exception.log are symlinked to stdout" $? "symlinks=${syms:-0} of 2"
+
+  # --- (4) warm-up finished and did not loop --------------------------------
+  wc_done=$(grep -c 'mura-entrypoint: warm-up complete' "$WORK/logs")
+  wc_gaveup=$(grep -c 'warm-up gave up' "$WORK/logs")
+  wc_redir=$(grep -c 'still redirecting' "$WORK/logs")
+  [ "${wc_done:-0}" -ge 1 ] && [ "${wc_gaveup:-0}" -eq 0 ]
+  check "entrypoint warm-up completed (bounded redirects, no give-up)" $? "complete=$wc_done gaveUp=$wc_gaveup domainMismatch=$wc_redir"
+  [ "${wc_redir:-0}" -eq 0 ] || note "warm-up saw a domain redirect - the site's recorded domain is not MURA_WARMUP_HOST; see the entrypoint log line for the fix."
+
+  # --- (3) no inherited VOLUMEs --------------------------------------------
+  cid=$(docker compose ps -q "$COMPOSE_SERVICE" | head -1)
+  img=$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null)
+  # Newer Docker engines drop a null Volumes key from the image config entirely,
+  # so look for a populated "Volumes" object in the whole Config document.
+  vols=$(docker image inspect --format '{{json .Config}}' "$img" 2>/dev/null | grep -o '"Volumes":{[^}]*}' | head -1)
+  [ -z "$vols" ]
+  check "image declares no VOLUME (nothing for a downstream image to inherit)" $? "image=$img volumes=${vols:-none}"
+
+  # --- (5) mssql healthcheck ------------------------------------------------
+  mcid=$(docker compose ps -q mssql 2>/dev/null | head -1)
+  if [ -n "$mcid" ]; then
+    hs=$(docker inspect --format '{{.State.Health.Status}}' "$mcid" 2>/dev/null)
+    [ "$hs" = "healthy" ]
+    check "mssql healthcheck (sqlcmd tools18 -C, falling back to tools) reports healthy" $? "health=$hs"
+  fi
+
+  dcx "rm -f $SCRATCH_PATH" >/dev/null 2>&1
+else
+  head1 "Container and Lucee 6 regression checks"
+  note "skipped (SKIP_DOCKER=1, or 'docker compose ps $COMPOSE_SERVICE' finds nothing from this directory)"
+fi
+
 # ===================================================================== end ===
 
 head1 "Summary"
