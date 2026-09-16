@@ -21,6 +21,10 @@ docker/
 !docker/entrypoint.sh
 !docker/nginx/
 !docker/nginx/default.conf
+!docker/lucee/
+!docker/lucee/merge-cfconfig.py
+!docker/lucee/cfconfig.d/
+!docker/lucee/cfconfig.d/*.json
 .env
 .env.example
 
