@@ -65,7 +65,12 @@ variables.baseDir=this.baseDir;
 
 //  do a settings setup check
 if ( !application.setupComplete || (not application.appInitialized || structKeyExists(url,application.appReloadKey) ) ) {
-	if ( getINIProperty(entry="mode",section="settings") == "production" ) {
+	/* Lucee 6 / Docker (fork change): the unattended setup used to run only in
+	   production mode, so MURA_MODE=development on a clean database never got
+	   its schema (a developer had to boot in production and flip the mode
+	   afterwards). In Docker the mode is just an environment variable and
+	   core/setup is always present in the image, so run the check regardless. */
+	if ( request.muraInDocker || getINIProperty(entry="mode",section="settings") == "production" ) {
 		if ( directoryExists( variables.basedir & "/core/setup" ) ) {
 			application.setupComplete = false;
 			//  check the settings
@@ -119,8 +124,24 @@ if ( application.setupComplete ) {
 			}
 	}
 
-	for(variables.p in listToArray(variables.iniSections[ variables.iniProperties.mode])){
-		variables.iniProperties[variables.p]=getProfileString("#variables.basedir#/config/settings.ini.cfm", variables.iniProperties.mode,variables.p);
+	/* Lucee 6 / Docker (fork change): MURA_MODE may select a mode that has no
+	   section in config/settings.ini.cfm - the shipped template and the
+	   unattended Docker setup only ever write [production], and IniFile.set()
+	   is a no-op in Docker, so iniSections[mode] used to be a hard startup
+	   error for mode=development. Clone [production] into the missing section
+	   (force=true bypasses the Docker no-op; config/ is writable in the image)
+	   so the mode inherits a full set of values and the encryption key below
+	   has a section to live in. If config/ is not writable, read [production]. */
+	if ( !structKeyExists(variables.iniSections, variables.iniProperties.mode) && structKeyExists(variables.iniSections, "production") ) {
+		try {
+			createobject("component","mura.IniFile").init(variables.iniPath).cloneSection("production", variables.iniProperties.mode, true);
+			variables.iniSections=getProfileSections(variables.iniPath);
+		} catch (any cfcatch) {}
+	}
+	variables.modeSection = structKeyExists(variables.iniSections, variables.iniProperties.mode) ? variables.iniProperties.mode : "production";
+
+	for(variables.p in listToArray(variables.iniSections[ variables.modeSection ])){
+		variables.iniProperties[variables.p]=getProfileString("#variables.basedir#/config/settings.ini.cfm", variables.modeSection,variables.p);
 		if ( left(variables.iniProperties[variables.p],2) == "${"
 					and right(variables.iniProperties[variables.p],1) == "}" ) {
 			variables.iniProperties[variables.p]=mid(variables.iniProperties[variables.p],3,len(variables.iniProperties[variables.p])-3);
@@ -148,12 +169,45 @@ if ( application.setupComplete ) {
 		}
 	}
 
-	try {
-		if ( !structKeyExists(variables.iniProperties,"encryptionkey") || !len(variables.iniProperties["encryptionkey"]) ) {
-			variables.iniProperties.encryptionkey=generateSecretKey('AES');
-			createobject("component","mura.IniFile").init(variables.iniPath).set( variables.iniProperties.mode, "encryptionkey", variables.iniProperties.encryptionkey );
+	/* Lucee 6 / Docker (fork change): IniFile.set() is a no-op when Mura is
+	   configured from the environment, so a key generated here was lost on
+	   every application start and everything encrypted with the previous one
+	   (plugin settings, stored credentials) became unreadable. Now:
+	     - an EMPTY MURA_ENCRYPTIONKEY (compose's "${MURA_ENCRYPTIONKEY:-}") no
+	       longer hides a key already persisted in the ini file;
+	     - a generated key is written (force=true) to the active mode section
+	       and, so a later change of mode does not mint a second key, to
+	       [production] as well;
+	     - in Docker it is logged as a warning, and it is a hard error if the
+	       key cannot be persisted, rather than silently running with a key
+	       that will not survive the next start.
+	   MURA_ENCRYPTIONKEY should be set explicitly in any real deployment. */
+	if ( !structKeyExists(variables.iniProperties,"encryptionkey") || !len(variables.iniProperties["encryptionkey"]) ) {
+		variables.iniProperties.encryptionkey=getProfileString(variables.iniPath, variables.modeSection, "encryptionkey");
+		if ( !len(variables.iniProperties.encryptionkey) ) {
+			variables.iniProperties.encryptionkey=getProfileString(variables.iniPath, "production", "encryptionkey");
 		}
-	} catch (any cfcatch) {
+		if ( !len(variables.iniProperties.encryptionkey) ) {
+			variables.iniProperties.encryptionkey=generateSecretKey('AES');
+			try {
+				variables.iniFile=createobject("component","mura.IniFile").init(variables.iniPath);
+				variables.iniFile.set( variables.iniProperties.mode, "encryptionkey", variables.iniProperties.encryptionkey, true );
+				if ( variables.iniProperties.mode != "production" && !len(getProfileString(variables.iniPath, "production", "encryptionkey")) ) {
+					variables.iniFile.set( "production", "encryptionkey", variables.iniProperties.encryptionkey, true );
+				}
+				if ( request.muraInDocker ) {
+					writeLog(type="warning", application=true, text="Mura: MURA_ENCRYPTIONKEY is not set. A key was generated and written to #variables.iniPath# ([#variables.iniProperties.mode#]). Set MURA_ENCRYPTIONKEY, or keep config/ on a persistent volume, so data encrypted with it stays readable after the container is recreated.");
+				}
+			} catch (any cfcatch) {
+				if ( request.muraInDocker ) {
+					throw(
+						type="mura.configuration.encryptionkey",
+						message="MURA_ENCRYPTIONKEY is not set and Mura could not persist a generated key to #variables.iniPath#: #cfcatch.message#",
+						detail="Without a stable key everything Mura encrypts (plugin settings, stored credentials) becomes unreadable on the next application start. Set MURA_ENCRYPTIONKEY, or make config/ writable."
+					);
+				}
+			}
+		}
 	}
 
 	/* Potentially Clear Out Secrets, also in onRequestStart_include

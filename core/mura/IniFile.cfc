@@ -82,7 +82,15 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 					<cfif listLen( line, "=" ) GT 1>
 						<cfset value = trim( listRest( line, "=" ) ) />
 					</cfif>
-					<cfset set( currentSection, entry, value ) />
+					<!--- Lucee 6 / Docker (fork change): this used to go through set(),
+					      which is a no-op when Mura is configured from the environment -
+					      so under Docker the parsed file was invisible (every get()
+					      returned "" and cloneSection() had nothing to copy). Outside
+					      Docker it also rewrote the ini file once per entry on every
+					      init(). Populate the in-memory struct directly; only set()
+					      writes to disk. --->
+					<cfset setSection( currentSection ) />
+					<cfset variables.ini[ currentSection ][ entry ] = value />
 				</cfif>
 			</cfif>
 		</cfloop>
@@ -139,12 +147,29 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		<cfargument name="section" type="string" required="true" hint="Section name." />
 		<cfargument name="entry" type="string" required="true" hint="Entry name." />
 		<cfargument name="value" type="any" required="false" default="" hint="Property value" />
+		<cfargument name="force" type="boolean" required="false" default="false" hint="Lucee 6 / Docker (fork change): write even when Mura is configured from the environment. Only for values that must survive an application restart and have no environment variable, e.g. a generated encryptionkey." />
 
-		<cfif not request.muraInDocker>
+		<cfif not request.muraInDocker or arguments.force>
 			<cfset setSection( arguments.section ) />
 
 			<cfset variables.ini[ arguments.section ][ arguments.entry ] = arguments.value />
 			<cfset setProfileString( variables.iniPath, arguments.section, arguments.entry, arguments.value ) />
+		</cfif>
+		<cfreturn this />
+	</cffunction>
+
+
+	<cffunction name="cloneSection" output="false" hint="Copies every entry of one section into another, creating it. Lucee 6 / Docker (fork change): MURA_MODE can select a mode (development) that config/settings.ini.cfm has no section for - the shipped template and the unattended Docker setup only ever write [production] - and onApplicationStart reads iniSections[mode], so the section has to exist and carry a full set of values.">
+		<cfargument name="source" type="string" required="true" hint="Section to copy from, normally production." />
+		<cfargument name="target" type="string" required="true" hint="Section to create." />
+		<cfargument name="force" type="boolean" required="false" default="false" hint="Passed through to set()." />
+
+		<cfset var entry="" />
+
+		<cfif structKeyExists( variables.ini, arguments.source ) and not structKeyExists( variables.ini, arguments.target )>
+			<cfloop collection="#variables.ini[ arguments.source ]#" item="entry">
+				<cfset set( arguments.target, entry, variables.ini[ arguments.source ][ entry ], arguments.force ) />
+			</cfloop>
 		</cfif>
 		<cfreturn this />
 	</cffunction>
