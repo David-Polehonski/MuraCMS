@@ -174,13 +174,20 @@ Lucee keeps its whole configuration in one JSON document,
 `/opt/lucee/server/lucee-server/context/.CFConfig.json`; in single mode there
 is no web context and no deploy folder to drop overrides into. The image
 ships `mura-merge-cfconfig` (`docker/lucee/merge-cfconfig.py`), which merges
-every `/opt/mura/cfconfig.d/*.json` fragment into that document - at build
-time, and again by the entrypoint on every boot - with a per-key shallow
-merge for objects (`caches`, `mappings`, `dataSources`...: entries are added
-to what is already there) and a straight replace for scalars
-(`inspectTemplate`). Fragments apply in file-name order; a `"//"` key is
-ignored so a fragment can carry its own documentation. The base image's own
-fragment is `docker/lucee/cfconfig.d/10-inspect-template.json`.
+JSON fragments into that document with a per-key shallow merge for objects
+(`caches`, `mappings`, `dataSources`, `loggers`...: entries are added to what
+is already there) and a straight replace for scalars (`inspectTemplate`).
+Fragments apply in file-name order; a `"//"` key is ignored so a fragment
+can carry its own documentation.
+
+Two directories: the base image's own fragment
+(`docker/lucee/cfconfig.d/10-inspect-template.json`) is baked in from
+`/opt/mura/cfconfig.base.d/` **at build time only**, while
+`/opt/mura/cfconfig.d/` is empty in the base image and everything a
+downstream image puts there is merged by the entrypoint **on every boot**.
+That split means a site image that edits `.CFConfig.json` directly during
+its own build (as the first downstream build did) is not overridden again at
+start-up; the boot-time merge only ever applies the site's own fragments.
 
 A downstream image adds Lucee settings by copying a fragment in:
 
@@ -352,10 +359,13 @@ Each site is commented with the Lucee 6 reason.
   (`docker/nginx/default.conf`), and it buys static-file serving off the
   JVM plus the Lucee admin being blocked at the edge by default.
 - **No image volumes**: see [Volumes (a decision)](#volumes-a-decision).
-- **Config merge at build *and* boot**: the build-time merge means a plain
-  `docker run` with a different entrypoint still gets the base fragment; the
-  boot-time merge means a downstream image only has to `COPY` a fragment,
-  and the merge is idempotent so re-running it is harmless.
+- **Config merge at build (base) and at boot (downstream)**: the base
+  fragment is baked in at build time, so a plain `docker run` with a
+  different entrypoint still has it; downstream fragments in
+  `/opt/mura/cfconfig.d/` are merged by the entrypoint on every boot, so a
+  site image only has to `COPY` one in. The merge is idempotent, and the two
+  directories are separate so the base never overrides what a site image
+  wrote into `.CFConfig.json` itself.
 - **core/docker excluded**: the legacy blueriver/Lucee 5 docker material
   under `core/docker` is left in the repo for reference but excluded from
   the build context (`.dockerignore`) - it's superseded by this folder.

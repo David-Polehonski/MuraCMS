@@ -2,7 +2,8 @@
   "//": [
     "Base-image Lucee configuration fragment, merged into",
     "/opt/lucee/server/lucee-server/context/.CFConfig.json by mura-merge-cfconfig",
-    "(at build time, and again on every boot by docker/entrypoint.sh).",
+    "at build time from /opt/mura/cfconfig.base.d/. Downstream fragments go in",
+    "/opt/mura/cfconfig.d/ and are merged by docker/entrypoint.sh on every boot.",
     "",
     "inspectTemplate decides whether Lucee ever re-reads a .cfm/.cfc it has",
     "already compiled. The stock lucee/lucee 6.2.8 image ships no value and its",

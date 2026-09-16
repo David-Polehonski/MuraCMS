@@ -109,11 +109,16 @@ RUN set -eux; \
 # and there is no separate web context or deploy folder to drop overrides
 # into. mura-merge-cfconfig merges every /opt/mura/cfconfig.d/*.json fragment
 # into that document (per-key shallow merge for objects such as "caches",
-# straight replace for scalars) - here at build time, and again by
-# docker/entrypoint.sh on every boot, so a downstream image only has to
-# `COPY my-lucee.json /opt/mura/cfconfig.d/50-site.json` to add cache
+# straight replace for scalars). The base image's own fragments live in
+# /opt/mura/cfconfig.base.d/ and are applied here, at build time, once.
+# /opt/mura/cfconfig.d/ is left empty for downstream images: everything in it
+# is merged by docker/entrypoint.sh on every boot, so a site image only has
+# to `COPY my-lucee.json /opt/mura/cfconfig.d/50-site.json` to add cache
 # connections, a default object cache, mappings, etc. Fragments are applied
-# in name order; later ones win.
+# in name order; later ones win. Keeping the base fragment out of the
+# boot-time directory means a downstream image that edits .CFConfig.json
+# directly at build time (e.g. sets inspectTemplate to "never") is not
+# overridden again at start-up.
 #
 # The base fragment sets inspectTemplate to "${LUCEE_INSPECT_TEMPLATE:once}":
 # Lucee 6.2.8 resolves that placeholder from the environment (verified), so
@@ -129,10 +134,11 @@ RUN set -eux; \
 # before it reached application.log at all, so the stdout symlink above never
 # had anything to carry.
 COPY docker/lucee/merge-cfconfig.py /usr/local/bin/mura-merge-cfconfig
-COPY docker/lucee/cfconfig.d/ /opt/mura/cfconfig.d/
+COPY docker/lucee/cfconfig.d/ /opt/mura/cfconfig.base.d/
 RUN set -eux; \
     chmod +x /usr/local/bin/mura-merge-cfconfig; \
-    mura-merge-cfconfig /opt/lucee/server/lucee-server/context/.CFConfig.json /opt/mura/cfconfig.d/*.json
+    mura-merge-cfconfig /opt/lucee/server/lucee-server/context/.CFConfig.json /opt/mura/cfconfig.base.d/*.json; \
+    mkdir -p /opt/mura/cfconfig.d
 
 COPY docker/entrypoint.sh /usr/local/bin/mura-entrypoint.sh
 RUN chmod +x /usr/local/bin/mura-entrypoint.sh
