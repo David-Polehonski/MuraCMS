@@ -46,7 +46,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 <cfset variables.instance=structNew()/>
 <cfset variables.instance.mode=""/>
 <cfset variables.autoupdateurl="https://github.com/blueriver/MuraCMS/archive/master.zip"/>
-<cfset variables.instance.version="7.4.0"/>
+<cfset variables.instance.version="7.4.1"/>
 <cfset variables.instance.title="Mura CMS"/>
 <cfset variables.instance.projectname="Mura CMS"/>
 <cfset variables.instance.projectname="Mura CMS"/>
@@ -908,6 +908,15 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		</cfif>
 
 		<cfdirectory action="list" directory="#getDirectoryFromPath(getCurrentTemplatePath())#dbUpdates" name="rsUpdates" filter="*.cfm" sort="name asc">
+
+		<!--- Lucee 6 (fork change): Lucee 6.2 has been seen to ignore the sort of a
+		      directory listing (directoryList(listInfo="name") came back in raw
+		      filesystem order, which ran a plugin's numbered install scripts out of
+		      sequence). These updates are applied in name order and assume it, so
+		      order the result explicitly instead of trusting the sort attribute. --->
+		<cfquery name="rsUpdates" dbtype="query">
+			select * from rsUpdates order by name asc
+		</cfquery>
 
 		<cfloop query="rsUpdates">
 			<cfinclude template="dbUpdates/#rsUpdates.name#">

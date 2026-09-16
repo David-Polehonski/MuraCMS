@@ -116,7 +116,12 @@ component extends="controller" output="false" {
 			arguments.rc.moduleID=tempID;
 			variables.fw.redirect(action="cSettings.editPlugin",append="moduleid",path="./");
 		} else {
-			if ( len(arguments.rc.moduleID) ) {
+			// Lucee 6 (fork change): pluginManager.deploy() now reports an archive
+			// extraction failure through the user's "errors" value instead of
+			// throwing; the Plugins tab of the list view is where that alert is
+			// rendered, so send an update of an existing plugin there too.
+			var deployErrors=application.userManager.getCurrentUser().getValue("errors");
+			if ( len(arguments.rc.moduleID) && !(isStruct(deployErrors) && !structIsEmpty(deployErrors)) ) {
 				variables.fw.redirect(action="cSettings.editPlugin",append="moduleid",path="./");
 			} else {
 

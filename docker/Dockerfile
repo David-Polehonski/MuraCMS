@@ -25,7 +25,7 @@
 ARG LUCEE_TAG=6.2.8.20-nginx-tomcat11.0-jdk21-temurin-noble
 FROM lucee/lucee:${LUCEE_TAG}
 
-ARG MURA_VERSION=7.4.0
+ARG MURA_VERSION=7.4.1
 ARG VCS_REF
 ARG BUILD_DATE
 
@@ -55,12 +55,12 @@ COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 # Application code. Respects the repo's .dockerignore (.git, docker/ itself,
 # core/docker legacy material, core/tests, node_modules, *.zip, logs, etc).
 #
-# .dockerignore excludes docker/ wholesale but negates docker/entrypoint.sh
-# and docker/nginx/default.conf so the explicit COPYs above can reach them -
-# dockerignore filtering applies to the whole build context, so that
-# negation also lets those two files ride along into this COPY. The rm -rf
-# below (next RUN) removes the resulting /var/www/docker so no build
-# tooling ends up alongside the application content it's building.
+# .dockerignore excludes docker/ wholesale but negates docker/entrypoint.sh,
+# docker/nginx/ and docker/lucee/ so the explicit COPYs in this file can reach
+# them - dockerignore filtering applies to the whole build context, so that
+# negation also lets those files ride along into this COPY. The rm -rf below
+# (next RUN) removes the resulting /var/www/docker so no build tooling ends
+# up alongside the application content it's building.
 COPY . /var/www
 
 # Runtime-writable locations Mura needs at boot / during content editing.
@@ -71,6 +71,16 @@ COPY . /var/www
 # chmod below actually reaches them. The base image runs Tomcat/nginx as
 # root by default (this is not the "-nonroot" tag), so this is a portability
 # safety net rather than a strict requirement today.
+#
+# Logs: Lucee 6.2 in this image runs in "single" mode, so application.log and
+# exception.log are written under /opt/lucee/server/lucee-server/context/logs
+# - NOT /opt/lucee/web/logs, which earlier versions of this file symlinked
+# (verified: a writeLog(application=true) line only ever landed in the
+# server-context directory). Symlink the real files to stdout so they reach
+# `docker logs`; the web-context links are kept in case a future Lucee tag
+# goes back to a separate web context. Any other *.log Lucee or a plugin
+# creates in that directory (e.g. a plugin's writeLog(file="MyPlugin")) is
+# tailed to stdout by docker/entrypoint.sh (MURA_LOG_TAIL).
 RUN set -eux; \
     rm -rf /var/www/docker; \
     mkdir -p \
@@ -86,24 +96,68 @@ RUN set -eux; \
         /var/www/themes \
         /var/www/modules \
     ; \
-    mkdir -p /opt/lucee/web/logs; \
+    mkdir -p /opt/lucee/web/logs /opt/lucee/server/lucee-server/context/logs; \
     ln -sf /dev/stdout /opt/lucee/web/logs/application.log; \
-    ln -sf /dev/stdout /opt/lucee/web/logs/exception.log
+    ln -sf /dev/stdout /opt/lucee/web/logs/exception.log; \
+    ln -sf /dev/stdout /opt/lucee/server/lucee-server/context/logs/application.log; \
+    ln -sf /dev/stdout /opt/lucee/server/lucee-server/context/logs/exception.log
+
+# Lucee configuration extension point.
+#
+# Lucee keeps its whole configuration in one JSON document; in this image's
+# "single" mode that is /opt/lucee/server/lucee-server/context/.CFConfig.json
+# and there is no separate web context or deploy folder to drop overrides
+# into. mura-merge-cfconfig merges every /opt/mura/cfconfig.d/*.json fragment
+# into that document (per-key shallow merge for objects such as "caches",
+# straight replace for scalars). The base image's own fragments live in
+# /opt/mura/cfconfig.base.d/ and are applied here, at build time, once.
+# /opt/mura/cfconfig.d/ is left empty for downstream images: everything in it
+# is merged by docker/entrypoint.sh on every boot, so a site image only has
+# to `COPY my-lucee.json /opt/mura/cfconfig.d/50-site.json` to add cache
+# connections, a default object cache, mappings, etc. Fragments are applied
+# in name order; later ones win. Keeping the base fragment out of the
+# boot-time directory means a downstream image that edits .CFConfig.json
+# directly at build time (e.g. sets inspectTemplate to "never") is not
+# overridden again at start-up.
+#
+# The base fragment sets inspectTemplate to "${LUCEE_INSPECT_TEMPLATE:once}":
+# Lucee 6.2.8 resolves that placeholder from the environment (verified), so
+# LUCEE_INSPECT_TEMPLATE=never|once|always|auto picks the behaviour per
+# container. Without it Lucee's built-in default is "auto", under which an
+# edited bind-mounted template was never re-read (only a Lucee restart
+# helped). "once" re-checks a template's timestamp once per request - the
+# right default for a base image that is mostly run in development; set
+# LUCEE_INSPECT_TEMPLATE=never in production and deploy by rebuilding.
+#
+# The same fragment raises Lucee's "application" logger from the stock level
+# "error" to "info": at "error" a plain writeLog(text=...) was discarded
+# before it reached application.log at all, so the stdout symlink above never
+# had anything to carry.
+COPY docker/lucee/merge-cfconfig.py /usr/local/bin/mura-merge-cfconfig
+COPY docker/lucee/cfconfig.d/ /opt/mura/cfconfig.base.d/
+RUN set -eux; \
+    chmod +x /usr/local/bin/mura-merge-cfconfig; \
+    mura-merge-cfconfig /opt/lucee/server/lucee-server/context/.CFConfig.json /opt/mura/cfconfig.base.d/*.json; \
+    mkdir -p /opt/mura/cfconfig.d
 
 COPY docker/entrypoint.sh /usr/local/bin/mura-entrypoint.sh
 RUN chmod +x /usr/local/bin/mura-entrypoint.sh
 
-# Sensible extension points for a downstream site image / local dev bind
-# mounts: uploaded/rendered assets for the default site, and shared plugins.
-VOLUME ["/var/www/plugins", "/var/www/sites/default/assets"]
+# No VOLUME declarations. Earlier versions declared /var/www/plugins and
+# /var/www/sites/default/assets as image volumes; a VOLUME is inherited by
+# every downstream image and cannot be undone, and it froze any plugins a
+# site image COPYed into /var/www/plugins inside an anonymous volume created
+# by the first container - rebuilt plugins were never seen again. Mount what
+# you want to persist explicitly (docker-compose.yml does).
 
 EXPOSE 80
 
 # Cheap-ish liveness check: any HTTP response on / means nginx is up and
-# Lucee is executing CFML - a Mura setup page and a Mura error page both
-# count, we're not asserting the app is fully configured.
+# Lucee is executing CFML - a Mura setup page, a Mura error page and Mura's
+# domain redirect (wget exit 8 on a 3xx with --max-redirect=0) all count;
+# we're not asserting the app is fully configured.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
-    CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
+    CMD wget -q -O /dev/null --max-redirect=0 http://127.0.0.1/ || [ $? -eq 8 ] || exit 1
 
 ENTRYPOINT ["/usr/local/bin/mura-entrypoint.sh"]
 CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]

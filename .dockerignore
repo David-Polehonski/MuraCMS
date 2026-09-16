@@ -21,6 +21,10 @@ docker/
 !docker/entrypoint.sh
 !docker/nginx/
 !docker/nginx/default.conf
+!docker/lucee/
+!docker/lucee/merge-cfconfig.py
+!docker/lucee/cfconfig.d/
+!docker/lucee/cfconfig.d/*.json
 .env
 .env.example
 
@@ -32,6 +36,30 @@ core/docker
 # published base image smaller. Re-add here if a project wants
 # `box testbox run` to work inside the container itself.
 core/tests
+
+# --- Runtime-generated content (mirrors .gitignore) ---
+# Mura writes all of these on first boot, so a checkout that has run the
+# compose stack has them lying around - and config/settings.ini.cfm carries
+# the encryption key and datasource of whatever ran last. None of it belongs
+# in an image; the Dockerfile recreates the directories it needs.
+config/settings.ini.cfm
+config/cfapplication.cfm
+config/mappings.cfm
+config/applicationSettings.cfm
+config/settings.cfm
+config/version.cfm
+config/appcfc
+config/setup
+plugins/
+sites/default/assets/
+sites/default/cache/
+sites/default/remote/
+sites/default/Application.cfc
+sites/default/contentRenderer.cfc
+sites/default/eventHandler.cfc
+sites/default/email/
+sites/default/model/
+themes/default/
 
 # --- Build artefacts / dependency caches ---
 node_modules

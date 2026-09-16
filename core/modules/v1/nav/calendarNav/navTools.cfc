@@ -135,6 +135,18 @@
 navMonth=arguments._navMonth;
 navYear=arguments._navYear;
 navDay=arguments._navDay;
+/* Lucee 6 (fork change): the year/month/day come from a URL segment
+   (/date/YYYY/MM/) via request.year/request.month/request.day. A blank or
+   non-numeric value used to reach createDate() and the gateway's typed date
+   binds, which Lucee 6 no longer tolerates ("can't cast [] to date value").
+   Validate first and fall back to the current month. */
+if ( !isNumeric(navYear) || !isNumeric(navMonth) || navMonth lt 1 || navMonth gt 12 || navYear lt 1 || navYear gt 9999 ) {
+	navMonth=month(now());
+	navYear=year(now());
+}
+if ( !isNumeric(navDay) || navDay lt 1 || navDay gt 31 ) {
+	navDay=day(now());
+}
 navID=arguments._navID;
 navPath=arguments._navPath;
 navType=arguments._navType;

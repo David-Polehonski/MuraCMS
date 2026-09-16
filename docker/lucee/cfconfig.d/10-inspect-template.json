@@ -1,0 +1,41 @@
+{
+  "//": [
+    "Base-image Lucee configuration fragment, merged into",
+    "/opt/lucee/server/lucee-server/context/.CFConfig.json by mura-merge-cfconfig",
+    "at build time from /opt/mura/cfconfig.base.d/. Downstream fragments go in",
+    "/opt/mura/cfconfig.d/ and are merged by docker/entrypoint.sh on every boot.",
+    "",
+    "inspectTemplate decides whether Lucee ever re-reads a .cfm/.cfc it has",
+    "already compiled. The stock lucee/lucee 6.2.8 image ships no value and its",
+    "built-in default ('auto') never picked up an edited bind-mounted template -",
+    "only a Lucee restart did. Lucee 6.2.8 resolves ${ENV_VAR:default}",
+    "placeholders in this file (verified), so the value is taken from the",
+    "LUCEE_INSPECT_TEMPLATE environment variable at start-up:",
+    "  once   - check a template's timestamp once per request (default; dev)",
+    "  always - check on every include (slowest)",
+    "  never  - never re-read; deploy by rebuilding (production)",
+    "  auto   - Lucee's own heuristic (what the stock image did)",
+    "",
+    "loggers.application: the stock image defines Lucee's 'application' logger",
+    "at level 'error', so a plain writeLog(text=...) / writeLog(application=true)",
+    "(type 'information') was discarded before it ever reached application.log -",
+    "which is why nothing from Mura or a plugin showed up in `docker logs` even",
+    "once the file was symlinked to stdout. 'info' lets those lines through;",
+    "the appender and path are Lucee's own defaults, restated because the merge",
+    "replaces the whole 'application' entry.",
+    "",
+    "A downstream image can override any of this with its own fragment in",
+    "/opt/mura/cfconfig.d/ (later file names win). The '//' key is ignored."
+  ],
+  "inspectTemplate": "${LUCEE_INSPECT_TEMPLATE:once}",
+  "loggers": {
+    "application": {
+      "appender": "resource",
+      "appenderArguments": {
+        "path": "{lucee-config}/logs/application.log"
+      },
+      "level": "info",
+      "layout": "classic"
+    }
+  }
+}

@@ -8,6 +8,8 @@
 # See docker/README.md for the full walkthrough (build, first run, how a
 # downstream website project extends the published image, env var
 # reference, TLS/secure-cookie notes).
+name: murabase
+
 services:
   mura:
     build:
@@ -15,7 +17,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
-    image: vintagetravel/muracms:7.4.0-dev
+    image: vintagetravel/muracms:7.4.1-dev
     ports:
       - "${MURA_HTTP_PORT:-80}:80"
       # Direct access to Tomcat/Lucee, bypassing nginx. nginx deliberately
@@ -27,6 +29,11 @@ services:
       - "127.0.0.1:${LUCEE_ADMIN_PORT:-8888}:8888"
     environment:
       LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
+
+      # Whether Lucee re-reads an edited .cfm/.cfc: once (default, per
+      # request), always, never (production), auto. Resolved by Lucee itself
+      # from the placeholder the image puts in .CFConfig.json.
+      LUCEE_INSPECT_TEMPLATE: ${LUCEE_INSPECT_TEMPLATE:-once}
 
       # Unattended setup: setting MURA_DATASOURCE makes Mura configure this
       # datasource and run its install wizard against it automatically
@@ -44,6 +51,22 @@ services:
       MURA_ADMINEMAIL: ${MURA_ADMINEMAIL:-admin@vintagetravel.co.uk}
       MURA_APPRELOADKEY: ${MURA_APPRELOADKEY:-appreload}
 
+      # Required. Everything Mura encrypts (plugin settings, stored
+      # credentials) is keyed on this; a container that has to generate its
+      # own key cannot guarantee the next one gets the same key.
+      MURA_ENCRYPTIONKEY: ${MURA_ENCRYPTIONKEY:?set MURA_ENCRYPTIONKEY in .env}
+
+      # development: no domain redirect, plugin display objects re-created per
+      # request, debugging on. production is what a deployed site runs. Both
+      # work on a clean database (the unattended setup runs regardless).
+      MURA_MODE: ${MURA_MODE:-development}
+
+      # The `port` ini key - what Mura appends when it builds an absolute URL.
+      # Mura stores a site's domain WITHOUT a port, so this is how a site
+      # published on a non-80 host port links back to itself. 80 renders as
+      # nothing; keep it equal to MURA_HTTP_PORT.
+      MURA_PORT: ${MURA_HTTP_PORT:-80}
+
       # Local HTTP dev: no TLS termination, so cookies must not be marked
       # Secure or the browser will silently drop them. Flip to true (or
       # unset - true is Mura's default) once there's a real TLS front end.
@@ -56,8 +79,10 @@ services:
 
       # Runs the GET / then GET /?appreload&applydbupdates warm-up in the
       # background once the app answers, instead of waiting for the first
-      # real visitor to pay for it.
+      # real visitor to pay for it. The requests are made as `localhost`
+      # (MURA_WARMUP_HOST), the domain the unattended setup records.
       MURA_WARMUP: "true"
+      MURA_WARMUP_HOST: ${MURA_WARMUP_HOST:-localhost}
     volumes:
       # Live-editable app content. config/ is bind-mounted too since Mura
       # writes its generated settings files there on first unattended setup.
@@ -76,19 +101,23 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
     ports:
-      - "1433:1433"
+      # Loopback only - for SSMS / Azure Data Studio / sqlcmd on the host.
+      - "127.0.0.1:${MSSQL_PORT:-1433}:1433"
     volumes:
       - mssql_data:/var/opt/mssql
     healthcheck:
+      # Current mssql/server:2022 builds ship sqlcmd as /opt/mssql-tools18
+      # (which needs -C to trust the self-signed certificate); older ones
+      # only have /opt/mssql-tools. Try both.
       test:
         [
           "CMD-SHELL",
-          "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null",
+          "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null 2>/dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null",
         ]
       interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
 
 volumes:
   mssql_data:
