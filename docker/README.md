@@ -1,7 +1,7 @@
 # Mura CMS container image
 
 This folder builds the base image Vintage Travel publishes for Mura CMS on
-Lucee 6.2 LTS: `vintagetravel/muracms:<version>` (e.g. `7.3.0`). Website
+Lucee 6.2 LTS: `vintagetravel/muracms:<version>` (e.g. `7.4.0`). Website
 projects `FROM` it and add their own site/plugins on top - see
 [Extending this image](#extending-this-image-a-website-project).
 
@@ -17,7 +17,7 @@ cfchart renderer, all of which stay blocked at the edge). Static files
 ## Build
 
 ```sh
-docker build -t vintagetravel/muracms:7.3.0 -f docker/Dockerfile .
+docker build -t vintagetravel/muracms:7.4.0 -f docker/Dockerfile .
 ```
 
 Useful build args:
@@ -25,7 +25,7 @@ Useful build args:
 | Arg | Default | Purpose |
 | --- | --- | --- |
 | `LUCEE_TAG` | `6.2.8.20-nginx-tomcat11.0-jdk21-temurin-noble` | Base image tag |
-| `MURA_VERSION` | `7.3.0` | Stamped into the `org.opencontainers.image.version` label |
+| `MURA_VERSION` | `7.4.0` | Stamped into the `org.opencontainers.image.version` label |
 | `LUCEE_ADMIN_PASSWORD` | `please_override_at_runtime` | Baked-in fallback; always override at `docker run`/compose time instead (see below) - a build-arg default ends up visible in `docker history` |
 | `VCS_REF`, `BUILD_DATE` | unset | OCI labels, e.g. `--build-arg VCS_REF=$(git rev-parse HEAD) --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)` |
 
@@ -84,7 +84,7 @@ not reuse these values anywhere real).
 ## Extending this image (a website project)
 
 ```Dockerfile
-FROM vintagetravel/muracms:7.3.0
+FROM vintagetravel/muracms:7.4.0
 
 COPY sites/vintagetravel /var/www/sites/vintagetravel
 COPY plugins /var/www/plugins
@@ -95,7 +95,7 @@ This works because `lucee/lucee`'s own Dockerfile registers
 image's build, right after its `FROM`, wiping the base image's placeholder
 `/var/www` before `vintagetravel/muracms`'s own `COPY . /var/www` runs.
 ONBUILD triggers are not inherited by a grandchild build, so a website
-project's own `FROM vintagetravel/muracms:7.3.0` does not wipe `/var/www`
+project's own `FROM vintagetravel/muracms:7.4.0` does not wipe `/var/www`
 again - it lands on top of the full Mura CMS tree already baked into the
 base image, and the `COPY`s above add to it rather than replacing it.
 
