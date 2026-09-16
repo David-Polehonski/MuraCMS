@@ -35,6 +35,9 @@ web.xml
 server-*.json
 server.json
 
+# local docker-compose secrets (see .env.example)
+.env
+
 # ignored directories, regardless of location
 compiled/
 logs/

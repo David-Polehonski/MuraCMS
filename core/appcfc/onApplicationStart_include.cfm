@@ -399,7 +399,14 @@ if ( application.setupComplete ) {
 		variables.tracer.commitTracepoint(variables.tracepoint);
 	} else if ( fileExists(ExpandPath("/muraWRM/config/objectMappings.json.cfm")) ) {
 		cffile( variable="variables.objectMappingJSON", file=ExpandPath("/muraWRM/config/objectMappings.json.cfm"), action="read" );
-		application.objectMappings=deserializeJSON(variables.objectMappingJSON);
+		// Lucee 6 throws on deserializeJSON('') rather than returning an empty
+		// string, so an empty or malformed mappings file would stop the whole
+		// application from starting. Keep the defaults set above instead.
+		if ( isJSON(variables.objectMappingJSON) ) {
+			application.objectMappings=deserializeJSON(variables.objectMappingJSON);
+		} else {
+			writeLog(type="Error", file="exception", text="Mura: config/objectMappings.json.cfm is empty or is not valid JSON; falling back to the default object mappings.");
+		}
 	} else {
 
 		variables.serviceFactory.getBean('approvalChain');

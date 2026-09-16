@@ -324,7 +324,14 @@ component extends="framework" output="false" {
 		request.muraAdminRequest=true;
 
 		if(ListFirst(server.coldfusion.productVersion) >= 10){
-			param name="cookie.rb" default={value='',expires='never',httponly=true,secure=application.configBean.getSecureCookies()};
+			if(not structKeyExists(cookie,"rb")){
+				// Routed through application.utility.setCookie() rather than a
+				// direct cookie-scope write so this cookie gets the same
+				// secure/samesite resolution (getUseSecureCookies()) as the
+				// rest of the app instead of only application.configBean's
+				// forced-on setting.
+				application.utility.setCookie(name="rb",value='');
+			}
 		} else {
 			param name="cookie.rb" default='';
 		}
@@ -332,7 +339,7 @@ component extends="framework" output="false" {
 		if(len(request.context.rb)){
 			session.rb=request.context.rb;
 			if(ListFirst(server.coldfusion.productVersion) >= 10){
-				cookie.rb={value="#session.rb#",expires="never",httponly=true,secure=application.configBean.getSecureCookies()};
+				application.utility.setCookie(name="rb",value=session.rb);
 			}
 		}
 

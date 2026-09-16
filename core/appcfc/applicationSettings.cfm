@@ -145,8 +145,35 @@ this.applicationTimeout = createTimeSpan(3,0,0,0);
 //  Where should cflogin stuff persist
 
 this.sessionManagement = !(left(cgi.path_info,11) == '/_api/rest/');
-this.sessioncookie.secure="true";
-this.sessioncookie.sameSite="none";
+
+/*  Session cookies are Secure + SameSite=none by default, which is what a public
+	HTTPS install needs. Installs served over plain HTTP (local containers, CI)
+	cannot use that combination at all, because browsers drop SameSite=None
+	cookies that are not also Secure, which silently breaks admin login.
+
+	Resolution order (first match wins):
+		1. MURA_SECURECOOKIES environment variable - this is the same variable
+		   configBean's securecookies setting already picks up in
+		   onApplicationStart_include.cfm, so the two stay in step.
+		2. securesessioncookies ini key / MURA_SECURESESSIONCOOKIES env var.
+		3. true.
+
+	NOTE: the ini key `securecookies` is deliberately NOT read here. It ships as
+	`false` in core/templates/settings.template.cfm, so honouring it would quietly
+	downgrade every existing install's session cookie on upgrade. */
+variables.muraSecureSessionCookies=evalSetting(getINIProperty("securesessioncookies","true"));
+
+if ( structKeyExists(request.muraSysEnv,'MURA_SECURECOOKIES') ) {
+	variables.muraSecureSessionCookies=request.muraSysEnv['MURA_SECURECOOKIES'];
+}
+
+if ( isBoolean(variables.muraSecureSessionCookies) && !variables.muraSecureSessionCookies ) {
+	this.sessioncookie.secure="false";
+	this.sessioncookie.sameSite="lax";
+} else {
+	this.sessioncookie.secure="true";
+	this.sessioncookie.sameSite="none";
+}
 
 if(this.sessionManagement){
 	this.loginStorage = "session";
@@ -294,6 +321,21 @@ if ( len(variables.clientStorageCheck) ) {
 	this.clientStorage = variables.clientStorageCheck;
 }
 this.ormenabled =  evalSetting(getINIProperty("ormenabled","true"));
+
+/*  Lucee 6 unbundled the Hibernate ORM extension. Mura core declares no ORM
+	entities (ormcfclocation is empty out of the box), so a missing extension
+	should never stop the application from starting. If ORM is switched on but
+	Hibernate is not installed, turn it back off and say so in the log.
+	Adobe ColdFusion is left alone - it still ships ORM in the box. */
+if ( isBoolean(this.ormenabled) && this.ormenabled && server.coldfusion.productname == 'lucee' && !isORMExtensionInstalled() ) {
+	this.ormenabled = false;
+	writeLog(
+		type="information"
+		, file="application"
+		, text="Mura: ormenabled was true but the Hibernate (ORM) extension is not installed on this Lucee server. ORM has been disabled. Install the Hibernate extension if a plugin or theme needs it."
+	);
+}
+
 this.ormSettings={};
 this.ormSettings.cfclocation=[];
 try {
@@ -412,51 +454,116 @@ if(request.muraInDocker && (len(getSystemEnvironmentSetting('MURA_DATABASE')) ||
 	}
 
 
-	if (len(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'))) {
-		this.datasources={
-			'#getSystemEnvironmentSetting('MURA_DATASOURCE')#'={
-			'#driverVarName#' = driverName
-			, '#connectionStringVarName#' = getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING')
-			, 'username' = getSystemEnvironmentSetting('MURA_DBUSERNAME')
-			, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
-			, 'clob' = true
-			, 'blob' = true
-			}
-		};
+	/*  Lucee 6.2 silently discards the ENTIRE this.datasources struct if any single
+		entry carries both `type` and `connectionString` - every datasource then
+		fails to register and requests die with "Datasource [x] doesn't exist ...
+		available datasource names are []". Any datasource we build from an explicit
+		JDBC url must therefore identify its driver by `class` (plus OSGi bundle
+		coordinates) and must NOT carry `type`/`host`/`database`/`port`.
 
+		Mura only ships driver defaults for the engines it can name confidently;
+		any other engine has to supply MURA_DBCLASS itself. */
+	muraDBClass='';
+	muraDBBundleName='';
+	muraDBBundleVersion='';
+
+	if ( server.coldfusion.productname == 'lucee' ) {
+		switch(getSystemEnvironmentSetting('MURA_DBTYPE')){
+			case 'mssql':
+				muraDBClass='com.microsoft.sqlserver.jdbc.SQLServerDriver';
+				muraDBBundleName='org.lucee.mssql';
+				muraDBBundleVersion='12.6.3.jre11';
+				break;
+			case 'mysql':
+				muraDBClass='com.mysql.cj.jdbc.Driver';
+				muraDBBundleName='com.mysql.cj';
+				break;
+		}
+
+		// The environment always wins over the built in defaults.
 		if (len(getSystemEnvironmentSetting('MURA_DBCLASS'))) {
-			this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].class = getSystemEnvironmentSetting('MURA_DBCLASS');
+			muraDBClass=getSystemEnvironmentSetting('MURA_DBCLASS');
 		}
 
 		if (len(getSystemEnvironmentSetting('MURA_DBBUNDLENAME'))) {
-			this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
+			muraDBBundleName=getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
 		}
 
 		if (len(getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION'))) {
-			this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+			muraDBBundleVersion=getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
 		}
+	}
 
-		if (len(getSystemEnvironmentSetting('MURA_DATABASE'))) {
-			connectionString=replaceNoCase(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'),"=#getSystemEnvironmentSetting('MURA_DATABASE')#","=");
-			connectionString=replaceNoCase(connectionString,"/#getSystemEnvironmentSetting('MURA_DATABASE')#","/");
+	if (len(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'))) {
 
-			this.datasources.nodatabase={
+		if ( server.coldfusion.productname == 'lucee' ) {
+
+			if ( !len(muraDBClass) ) {
+				throw(
+					type="mura.configuration.datasource"
+					, message="MURA_DBCLASS must be set when MURA_DBCONNECTIONSTRING is used on Lucee with MURA_DBTYPE '#getSystemEnvironmentSetting('MURA_DBTYPE')#'."
+					, detail="Lucee 6 discards every datasource definition when a connection string is combined with a datasource type, so the JDBC driver has to be named explicitly. Set MURA_DBCLASS, and normally MURA_DBBUNDLENAME and MURA_DBBUNDLEVERSION with it. Mura ships driver defaults for MURA_DBTYPE mssql and mysql only."
+				);
+			}
+
+			this.datasources={
+				'#getSystemEnvironmentSetting('MURA_DATASOURCE')#' = buildLuceeJDBCDatasource(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'))
+			};
+
+			if (len(getSystemEnvironmentSetting('MURA_DATABASE'))) {
+				connectionString=replaceNoCase(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'),"=#getSystemEnvironmentSetting('MURA_DATABASE')#","=");
+				connectionString=replaceNoCase(connectionString,"/#getSystemEnvironmentSetting('MURA_DATABASE')#","/");
+
+				this.datasources.nodatabase = buildLuceeJDBCDatasource(connectionString,false);
+			}
+
+		} else {
+
+			this.datasources={
+				'#getSystemEnvironmentSetting('MURA_DATASOURCE')#'={
 				'#driverVarName#' = driverName
-				, '#connectionStringVarName#' = connectionString
+				, '#connectionStringVarName#' = getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING')
 				, 'username' = getSystemEnvironmentSetting('MURA_DBUSERNAME')
 				, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
+				, 'clob' = true
+				, 'blob' = true
+				}
 			};
 
 			if (len(getSystemEnvironmentSetting('MURA_DBCLASS'))) {
-				this.datasources.nodatabase.class = getSystemEnvironmentSetting('MURA_DBCLASS');
+				this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].class = getSystemEnvironmentSetting('MURA_DBCLASS');
 			}
 
 			if (len(getSystemEnvironmentSetting('MURA_DBBUNDLENAME'))) {
-				this.datasources.nodatabase.bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
+				this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
 			}
 
 			if (len(getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION'))) {
-				this.datasources.nodatabase.bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+				this.datasources['#getSystemEnvironmentSetting('MURA_DATASOURCE')#'].bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+			}
+
+			if (len(getSystemEnvironmentSetting('MURA_DATABASE'))) {
+				connectionString=replaceNoCase(getSystemEnvironmentSetting('MURA_DBCONNECTIONSTRING'),"=#getSystemEnvironmentSetting('MURA_DATABASE')#","=");
+				connectionString=replaceNoCase(connectionString,"/#getSystemEnvironmentSetting('MURA_DATABASE')#","/");
+
+				this.datasources.nodatabase={
+					'#driverVarName#' = driverName
+					, '#connectionStringVarName#' = connectionString
+					, 'username' = getSystemEnvironmentSetting('MURA_DBUSERNAME')
+					, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
+				};
+
+				if (len(getSystemEnvironmentSetting('MURA_DBCLASS'))) {
+					this.datasources.nodatabase.class = getSystemEnvironmentSetting('MURA_DBCLASS');
+				}
+
+				if (len(getSystemEnvironmentSetting('MURA_DBBUNDLENAME'))) {
+					this.datasources.nodatabase.bundleName = getSystemEnvironmentSetting('MURA_DBBUNDLENAME');
+				}
+
+				if (len(getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION'))) {
+					this.datasources.nodatabase.bundleVersion = getSystemEnvironmentSetting('MURA_DBBUNDLEVERSION');
+				}
 			}
 		}
 
@@ -482,6 +589,50 @@ if(request.muraInDocker && (len(getSystemEnvironmentSetting('MURA_DATABASE')) ||
 				, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
 			}
 		};
+
+		/*  Lucee 6's built in mssql datasource template does not carry the
+			`database` key through to the JDBC url: the datasource resolves to
+			jdbc:sqlserver://<host>:<port> with no databaseName, so Mura installs
+			its tables into the server's default database (master) instead of
+			MURA_DATABASE. Build the url explicitly instead of relying on the
+			template.
+
+			Both entries are REPLACED rather than augmented: a Lucee datasource
+			carrying `type` alongside `connectionString` makes Lucee 6.2 throw away
+			every datasource on the page, so the type/host/database/port form built
+			above cannot simply have a connectionString added to it.
+
+			mysql/postgresql/oracle keep the host/database/port form, which still
+			resolves correctly on Lucee 6.
+
+			MURA_DBCONNECTIONPARAMS optionally supplies extra ";" delimited JDBC
+			properties, eg. "encrypt=true;trustServerCertificate=true". It is
+			empty by default so that the generated url matches what Lucee 6
+			already produces apart from the databaseName. */
+		if ( server.coldfusion.productname == 'lucee' && driverName == 'mssql' ) {
+			muraDSName=getSystemEnvironmentSetting('MURA_DATASOURCE');
+			muraDBPort=getSystemEnvironmentSetting('MURA_DBPORT');
+
+			if ( !len(muraDBPort) ) {
+				muraDBPort=1433;
+			}
+
+			muraDBParams=getSystemEnvironmentSetting('MURA_DBCONNECTIONPARAMS');
+
+			if ( len(muraDBParams) && left(muraDBParams,1) != ';' ) {
+				muraDBParams=';' & muraDBParams;
+			}
+
+			muraDBBaseURL='jdbc:sqlserver://#getSystemEnvironmentSetting('MURA_DBHOST')#:#muraDBPort#';
+
+			this.datasources[muraDSName] = buildLuceeJDBCDatasource(
+				muraDBBaseURL & ';databaseName=' & getSystemEnvironmentSetting('MURA_DATABASE') & muraDBParams
+			);
+
+			// nodatabase is used by core/appcfc/setup_check.cfm to CREATE DATABASE,
+			// so it must connect to the server without naming a database.
+			this.datasources.nodatabase = buildLuceeJDBCDatasource(muraDBBaseURL & muraDBParams,false);
+		}
 	}
 
 	if (server.coldfusion.productname == 'lucee') {
@@ -708,6 +859,77 @@ function commitTracePoint(tracePointID) output=false {
 		tracePoint.duration=tracePoint.stop-tracePoint.start;
 		tracePoint.total=tracePoint.stop-request.muraRequestStart;
 	}
+}
+
+/*  Build a Lucee datasource definition from an explicit JDBC connection string.
+
+	Lucee 6.2 throws away the WHOLE this.datasources struct if any entry carries
+	both `type` and `connectionString`, so a datasource described by an explicit
+	url has to name its driver `class` (plus OSGi bundle coordinates) and must not
+	carry `type`, `host`, `database` or `port`.
+
+	Callers must have resolved variables.muraDBClass first. withLob mirrors the
+	original definitions: the main datasource asks for clob/blob support, the
+	nodatabase one used for CREATE DATABASE does not. */
+struct function buildLuceeJDBCDatasource(required string connectionString, boolean withLob=true) output=false {
+	var ds={
+		'class' = variables.muraDBClass
+		, 'connectionString' = arguments.connectionString
+		, 'username' = getSystemEnvironmentSetting('MURA_DBUSERNAME')
+		, 'password' = getSystemEnvironmentSetting('MURA_DBPASSWORD')
+	};
+
+	if ( len(variables.muraDBBundleName) ) {
+		ds['bundleName']=variables.muraDBBundleName;
+	}
+
+	if ( len(variables.muraDBBundleVersion) ) {
+		ds['bundleVersion']=variables.muraDBBundleVersion;
+	}
+
+	if ( arguments.withLob ) {
+		ds['clob']=true;
+		ds['blob']=true;
+	}
+
+	return ds;
+}
+
+/*  Is the Hibernate (ORM) extension available on this Lucee server?
+	Lucee 6 no longer bundles it. Any failure to answer the question is treated
+	as "not installed" so that application start-up can never be blocked by the
+	check itself. */
+boolean function isORMExtensionInstalled() output=false {
+	var installed='';
+
+	try {
+		installed=extensionList();
+	} catch (any e) {
+		return false;
+	}
+
+	if ( !isQuery(installed) ) {
+		return false;
+	}
+
+	try {
+		var hasName=listFindNoCase(installed.columnList,'name');
+		var hasId=listFindNoCase(installed.columnList,'id');
+
+		for ( var i=1; i <= installed.recordCount; i++ ) {
+			if ( hasName && findNoCase('hibernate',installed['name'][i]) ) {
+				return true;
+			}
+			// Lucee's Hibernate extension id, in case the label ever changes.
+			if ( hasId && installed['id'][i] == '6D2AF33D-1727-4342-8D0AD1AB3EBCC63A' ) {
+				return true;
+			}
+		}
+	} catch (any e) {
+		return false;
+	}
+
+	return false;
 }
 
 function getSystemEnvironmentSetting(required string name){

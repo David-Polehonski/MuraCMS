@@ -798,9 +798,11 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		</cfif>
 
 
-		<cfif fileExists(currentSource)>
+		<cfif fileExists(currentSource) >
 			<cfloop list="#sizeList#" index="imageSize">
-				<cfset cropAndScale(fileID=rsDB.fileID,size=imageSize,siteid=arguments.siteid)>
+				<cfif !fileExists(cacheFilePath & rsDB.fileID & "_" & imageSize & "." & rsDB.fileEXT) >
+					<cfset cropAndScale(fileID=rsDB.fileID,size=imageSize,siteid=arguments.siteid)>
+				</cfif>
 			</cfloop>
 		</cfif>
 	</cfloop>
@@ -1021,7 +1023,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 		<cfset cropper=imageRead(source)>
 
 		<!---
-			This a workaround to ensure jpegs can be process 
+			This a workaround to ensure jpegs can be process
 			https://luceeserver.atlassian.net/browse/LDEV-1874
 		--->
 		<cfif listFindNoCase('jpg,jpeg',rsMeta.fileExt)>

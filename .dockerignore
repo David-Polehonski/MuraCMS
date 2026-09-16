@@ -10,3 +10,36 @@ docker-offline.yml
 stack-review.yml
 buddy.yml
 travis.yml
+
+# --- Container build assets ---
+# The Dockerfile itself, nginx config and entrypoint script are needed in
+# the build context so docker/Dockerfile's explicit COPYs can reach them,
+# but the rest of docker/ (this README, any compose overrides someone adds
+# here) is build/local-dev tooling, not application content - keep it out
+# of the image that COPY . /var/www produces.
+docker/
+!docker/entrypoint.sh
+!docker/nginx/
+!docker/nginx/default.conf
+.env
+.env.example
+
+# Legacy Lucee 5 / blueriver-era docker material - superseded by /docker,
+# kept in the repo for reference only.
+core/docker
+
+# Test suite: not required to run Mura, so it's left out to keep the
+# published base image smaller. Re-add here if a project wants
+# `box testbox run` to work inside the container itself.
+core/tests
+
+# --- Build artefacts / dependency caches ---
+node_modules
+*.zip
+*.log
+logs/
+
+# --- Never ship server/admin-only directories into an image build ---
+WEB-INF/
+CFIDE/
+

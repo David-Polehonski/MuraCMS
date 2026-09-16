@@ -42,6 +42,9 @@ modified version; it is your choice whether to do so, or to make such modified v
 version 2 without this exception.  You may, if you choose, apply this exception to your own modified versions of Mura CMS.
 --->
 <cfset event=request.event>
+<!--- parentID is only present when adding a nested category, so it has to
+	default or the edit screen errors when the url parameter is omitted. --->
+<cfparam name="rc.parentID" default="">
 <cfinclude template="js.cfm">
 <cfoutput>
   <div class="mura-header">

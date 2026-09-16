@@ -1,0 +1,94 @@
+# Local development stack for Mura CMS on Lucee 6.2 / MSSQL.
+#
+# NOT for production - it bind-mounts the working tree straight into the
+# container so edits to sites/plugins/themes show up without a rebuild, runs
+# with MURA_SECURECOOKIES=false (plain HTTP), and pulls its passwords from a
+# git-ignored .env file. Copy .env.example to .env and fill it in first.
+#
+# See docker/README.md for the full walkthrough (build, first run, how a
+# downstream website project extends the published image, env var
+# reference, TLS/secure-cookie notes).
+services:
+  mura:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
+    image: vintagetravel/muracms:7.3.0-dev
+    ports:
+      - "${MURA_HTTP_PORT:-80}:80"
+      # Direct access to Tomcat/Lucee, bypassing nginx. nginx deliberately
+      # 404s /lucee (see docker/nginx/default.conf), so this is how you reach
+      # the Lucee server administrator at http://localhost:8888/lucee/admin/server.cfm
+      # to inspect datasources, extensions, caches and logs. Bound to the
+      # loopback interface only, so it is never reachable from the network,
+      # and absent from any production compose - do not copy this line into one.
+      - "127.0.0.1:${LUCEE_ADMIN_PORT:-8888}:8888"
+    environment:
+      LUCEE_ADMIN_PASSWORD: ${LUCEE_ADMIN_PASSWORD:-changeme_dev_only}
+
+      # Unattended setup: setting MURA_DATASOURCE makes Mura configure this
+      # datasource and run its install wizard against it automatically
+      # (core/appcfc/setup_check.cfm).
+      MURA_DATASOURCE: muradb
+      MURA_DATABASE: muradb
+      MURA_DBTYPE: mssql
+      MURA_DBHOST: mssql
+      MURA_DBPORT: "1433"
+      MURA_DBUSERNAME: sa
+      MURA_DBPASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+
+      MURA_ADMIN_USERNAME: ${MURA_ADMIN_USERNAME:-admin}
+      MURA_ADMIN_PASSWORD: ${MURA_ADMIN_PASSWORD:-changeme_dev_only}
+      MURA_ADMINEMAIL: ${MURA_ADMINEMAIL:-admin@vintagetravel.co.uk}
+      MURA_APPRELOADKEY: ${MURA_APPRELOADKEY:-appreload}
+
+      # Local HTTP dev: no TLS termination, so cookies must not be marked
+      # Secure or the browser will silently drop them. Flip to true (or
+      # unset - true is Mura's default) once there's a real TLS front end.
+      MURA_SECURECOOKIES: "false"
+
+      MURA_ORMENABLED: "false"
+      MURA_ALLOWAUTOUPDATES: "false"
+      MURA_SITEIDINURLS: "false"
+      MURA_INDEXFILEINURLS: "true"
+
+      # Runs the GET / then GET /?appreload&applydbupdates warm-up in the
+      # background once the app answers, instead of waiting for the first
+      # real visitor to pay for it.
+      MURA_WARMUP: "true"
+    volumes:
+      # Live-editable app content. config/ is bind-mounted too since Mura
+      # writes its generated settings files there on first unattended setup.
+      - ./sites:/var/www/sites
+      - ./plugins:/var/www/plugins
+      - ./themes:/var/www/themes
+      - ./modules:/var/www/modules
+      - ./config:/var/www/config
+    depends_on:
+      mssql:
+        condition: service_healthy
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  mssql_data:
