@@ -13,6 +13,7 @@ has broken something end to end.
 | Front end and routing | `GET /` returns 200 with a `<title>`; an unknown path reaches **Mura's** 404 (proving nginx's `try_files` front-controller rewrite, not nginx's own 404); a content URL beginning with `lucee` is **not** swallowed by the Lucee-admin block; `/lucee/admin.cfm` **is** still blocked; a static asset under `/admin/assets/` is served by nginx; the JSON API returns JSON |
 | Admin login | the login form loads and its CSRF tokens are scraped; the login POST round-trips against a cookie jar; `cArch.list` then returns *Site Content* with a Logout link; the same URL **without** cookies is refused (control, so a broken auth check can't produce a false pass). It also prints the `Set-Cookie` flags and warns when `Secure` cookies are issued over plain HTTP |
 | Content lifecycle | creates a Page under the home node by re-posting the real admin form, confirms it renders on the front end with its body content, then deletes it via the site-manager tree's delete link and confirms it 404s |
+| Container / Lucee 6 regressions (needs `docker compose`) | writes a scratch template into `sites/<site>/remote/` inside the container and reads it back: `configBean.getMode()` equals the container's `MURA_MODE` and the ini has that mode's section; the encryption key in use is `MURA_ENCRYPTIONKEY` (or, if that is unset, was generated and persisted to the ini); feed queries with an empty criteria on a date column, a numeric column and a Date extended attribute (created on the fly, plus a node that sets it) return 200; editing the template is served on the next request (inspectTemplate); a `writeLog(application=true)` line appears in `docker compose logs`; the server-context log symlinks exist; the entrypoint warm-up completed without giving up (a domain-mismatch redirect is reported as a NOTE); the image declares no `VOLUME`; the mssql healthcheck is healthy. Skipped with `SKIP_DOCKER=1` or when `docker compose ps <service>` finds nothing from the current directory |
 
 Each check prints `PASS` or `FAIL`; the run ends with `passed=N failed=N` and
 exits non-zero if anything failed, so it drops straight into CI.
@@ -61,6 +62,9 @@ are echoed — only the first 8 characters of the CSRF token are printed.
 | `MURA_SITE_ID` | `default` | Site id used for admin and API URLs |
 | `MURA_HOME_ID` | `00000000000000000000000000000000001` | Content id of the home node the test page is created under |
 | `CURL_TIMEOUT` | `120` | Per-request timeout in seconds |
+| `COMPOSE_SERVICE` | `mura` | Compose service the container checks run `docker compose exec`/`logs` against; run the script from the compose project directory |
+| `SKIP_DOCKER` | unset | `1` skips the container checks (e.g. when running the script from inside the container) |
+| `MURA_SMOKE_SITE_DIR` | `/var/www/sites/<MURA_SITE_ID>` | Site directory inside the container the scratch template is written under (`remote/` is appended) |
 
 ## Notes
 
