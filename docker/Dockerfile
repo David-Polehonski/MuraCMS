@@ -25,7 +25,7 @@
 ARG LUCEE_TAG=6.2.8.20-nginx-tomcat11.0-jdk21-temurin-noble
 FROM lucee/lucee:${LUCEE_TAG}
 
-ARG MURA_VERSION=7.3.0
+ARG MURA_VERSION=7.4.0
 ARG VCS_REF
 ARG BUILD_DATE
 
