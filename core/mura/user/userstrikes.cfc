@@ -52,7 +52,10 @@
 		<cfquery>
 		update tuserstrikes set
 		strikes=0,
-		lastAttempt=<cfqueryparam cfsqltype="cf_sql_timestamp" value="#getLastAttempt()#">
+		<!--- Lucee 6 (fork change): an empty string bound as cf_sql_timestamp throws
+		      ("can't cast [] to date value") instead of becoming NULL; bind a blank
+		      last attempt as NULL explicitly. --->
+		lastAttempt=<cfqueryparam cfsqltype="cf_sql_timestamp" value="#getLastAttempt()#" null="#not isDate(getLastAttempt())#">
 		where username=<cfqueryparam cfsqltype="cf_sql_varchar" value="#getUsername()#">
 	</cfquery>
 	</cfif>

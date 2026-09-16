@@ -305,11 +305,15 @@
 		<cfargument name="excludeDirs"   required="no"  type="string"             hint="| (Chr(124)) delimited list of dirs to not extract.">
 		<cfargument name="extractDirsToTop"   required="no"  type="string" >
 
+		<!--- Lucee 6 (fork change): overwriteFiles was accepted but never passed on,
+		      and cfzip's default is to leave existing files alone - so re-uploading a
+		      plugin only ever added net-new files. Honour the argument (every caller
+		      in pluginManager passes overwriteFiles=true). --->
 		<cfzip
 			action="unzip"
 			file="#arguments.zipFilePath#"
 			destination="#arguments.extractPath#"
-			overwrite="true"
+			overwrite="#arguments.overwriteFiles#"
 			/>
 		<cfreturn true/>
 	</cffunction>

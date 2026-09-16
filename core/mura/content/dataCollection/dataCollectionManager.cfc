@@ -86,6 +86,12 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 			<cfset action="Update">
 			<cfset fieldlist=arguments.data.fieldlist>
 			<cfset entered=arguments.data.entered>
+			<!--- Lucee 6 (fork change): a blank "entered" from the submitted data used to
+			      reach the cf_sql_timestamp bind below and throw ("can't cast [] to date
+			      value"); keep the original stamp when it is a date, otherwise use now(). --->
+			<cfif not isDate(entered)>
+				<cfset entered=now()>
+			</cfif>
 			<cfset delete('#responseid#',false)/>
 		<cfelse>
 			<cfset responseid=createuuid()>

@@ -348,8 +348,24 @@ select * from tplugins order by #arguments.orderby#
 		</cfif>
 
 		<cfif len(serverFile)>
-			<cfset variables.zipTool.extract(zipFilePath=serverfile,extractPath=location, overwriteFiles=true)>
-			
+			<!--- Lucee 6 (fork change): Zip.Extract() now honours overwriteFiles, so a
+			      re-uploaded plugin replaces its files instead of only adding new ones.
+			      An extraction failure used to propagate as a bare Lucee error page (or,
+			      worse, leave a half-written plugin behind); report it through the same
+			      user "errors" channel the bundle path uses so the Plugins tab shows it. --->
+			<cftry>
+				<cfset variables.zipTool.extract(zipFilePath=serverfile,extractPath=location, overwriteFiles=true)>
+				<cfcatch>
+					<cfset errors.pluginExtract="Could not extract plugin archive '#listLast(serverfile,'/\')#' into #location#: #cfcatch.message# #cfcatch.detail#">
+					<cfset getCurrentUser().setValue("errors",errors)>
+					<cflog type="error" application="true" text="Mura pluginManager.deploy: #errors.pluginExtract#">
+					<cfif not structIsEmpty(cffileData)>
+						<cffile action="delete" file="#serverfile#">
+					</cfif>
+					<cfreturn "">
+				</cfcatch>
+			</cftry>
+
 			<cfif not structIsEmpty(cffileData)>
 				<cffile action="delete" file="#serverfile#">
 			</cfif>
@@ -992,7 +1008,11 @@ select * from tplugins order by #arguments.orderby#
 	<!--- save the submitted name --->
 	<cfquery>
 	update tplugins set name=<cfqueryparam cfsqltype="cf_sql_varchar" value="#arguments.args.pluginalias#">,
-	loadPriority=<cfqueryparam cfsqltype="cf_sql_numeric" value="#arguments.args.loadPriority#">,
+	<!--- Lucee 6 (fork change): an empty string can no longer be bound as cf_sql_numeric
+	      ("can't cast empty string to a number value"), and loadPriority arrives blank
+	      from a plugin XML without <loadPriority> or an empty admin field. Default to 5,
+	      as the insert and the XML import already do. --->
+	loadPriority=<cfif isNumeric(arguments.args.loadPriority)><cfqueryparam cfsqltype="cf_sql_numeric" value="#arguments.args.loadPriority#"><cfelse>5</cfif>,
 	package=<cfqueryparam cfsqltype="cf_sql_varchar" value="#arguments.args.package#">
 	where moduleID=<cfqueryparam cfsqltype="cf_sql_varchar" value="#arguments.args.moduleID#">
 	</cfquery>

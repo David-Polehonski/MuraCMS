@@ -467,7 +467,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
  												NULL
 											<cfelse>
 												<cfif isListParam>(</cfif>
-												<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#">
+												<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#" null="#bindsAsNull(param)#">
 												<cfif isListParam>)</cfif>
 
 												<cfif  listFindNoCase('tcontentcategoryassign.categoryid,tcontentcategories.path',param.getField())>
@@ -488,7 +488,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 												NULL
 											<cfelse>
 												<cfif isListParam>(</cfif>
-												<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#">
+												<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#" null="#bindsAsNull(param)#">
 												<cfif isListParam>)</cfif>
 											</cfif>
 									)
@@ -499,7 +499,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 											 NULL
 										<cfelse>
 											<cfif isListParam>(</cfif>
-											<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#" null="#iif(param.getCriteria() eq 'null',de('true'),de('false'))#">
+											<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#" null="#bindsAsNull(param)#">
 											<cfif isListParam>)</cfif>
 										</cfif>
 								</cfif>
@@ -554,7 +554,7 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 													NULL
 												<cfelse>
 													<cfif isListParam>(</cfif>
-													<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#">
+													<cfqueryparam cfsqltype="cf_sql_#param.getDataType()#" value="#param.getCriteria()#" list="#iif(isListParam,de('true'),de('false'))#" null="#bindsAsNull(param)#">
 													<cfif isListParam>)</cfif>
 												</cfif>
 									)
@@ -1031,6 +1031,16 @@ version 2 without this exception.  You may, if you choose, apply this exception 
 <cffunction name="sanitizedValue" output="false">
 	<cfargument name="value">
 	<cfreturn REReplace(arguments.value,"[^0-9A-Za-z\._,\- ]\*","","all")>
+</cffunction>
+
+<cffunction name="bindsAsNull" access="private" output="false" returntype="boolean"
+	hint="Lucee 6 (fork change): Lucee 6 no longer turns an empty string bound to a date or numeric cfqueryparam into NULL - it throws 'can't cast [] to date value' / 'can't cast empty string to a number value'. A blank criteria on a typed column (e.g. $.getFeed().where().prop('releaseDate').isEQ('')) therefore has to be bound with null=true explicitly; the literal 'null' criteria already was. A blank string criteria is still a real comparison against ''.">
+	<cfargument name="param">
+	<cfif arguments.param.getCriteria() eq 'null'>
+		<cfreturn true>
+	</cfif>
+	<cfreturn arguments.param.getCriteria() eq ''
+		and listFindNoCase('date,datetime,timestamp,time,numeric,integer,bigint,decimal,double,float,money,money4,real,smallint,tinyint,bit', arguments.param.getDataType()) gt 0>
 </cffunction>
 
 </cfcomponent>
